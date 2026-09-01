@@ -1,0 +1,60 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  img, video, iframe, embed, object {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  body {
+    @apply bg-dark text-white overflow-x-hidden w-full;
+    background: radial-gradient(circle at center, #1a1a2e 0%, #0a0a0f 100%);
+    min-height: 100vh;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+    width: 100%;
+  }
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.input-field {
+  @apply w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-glow focus:ring-1 focus:ring-glow transition-all duration-300;
+}
+
+.label-text {
+  @apply block text-sm font-medium text-gray-300 mb-1.5 tracking-wide;
+}
+
+/* Custom Checkbox */
+.custom-checkbox {
+  @apply appearance-none w-6 h-6 border-2 border-white/20 rounded-md bg-black/40 checked:bg-glow checked:border-glow transition-all duration-200 cursor-pointer relative;
+}
+
+.custom-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 6px;
+  height: 12px;
+  border: solid black;
+  border-width: 0 2px 2px 0;
+  margin-top: -2px;
+}
