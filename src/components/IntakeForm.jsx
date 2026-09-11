@@ -1,7 +1,24 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Loader2, X, Check, FileText, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, CheckCircle, AlertCircle } from 'lucide-react';
+import { Zap, Loader2, X, Check, FileText, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
+import { createContractRecords, deleteContractRecords, cleanupPrematureContracts } from '../lib/supabaseClient';
+
+export const extractDriveFileId = (url, explicitId) => {
+  if (explicitId && typeof explicitId === 'string' && explicitId.trim()) {
+    return explicitId.trim();
+  }
+  if (!url || typeof url !== 'string') return null;
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  const idParamMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParamMatch && idParamMatch[1]) {
+    return idParamMatch[1];
+  }
+  return null;
+};
 
 const DocumentIframes = React.memo(({ docs, isHidden, onOpenFullscreen }) => {
   if (!docs.sla_url && !docs.nda_url) {
@@ -55,7 +72,7 @@ const DocumentIframes = React.memo(({ docs, isHidden, onOpenFullscreen }) => {
   );
 });
 
-export default function IntakeForm() {
+export default function IntakeForm({ onShowToast }) {
   const [formData, setFormData] = useState({
     client_company_name: '',
     client_address: '',
@@ -76,17 +93,13 @@ export default function IntakeForm() {
   const [showModal, setShowModal] = useState(false);
   const [modalStep, setModalStep] = useState('review');
   const [generatedDocs, setGeneratedDocs] = useState({});
-  const [isApproving, setIsApproving] = useState(false);
+  const [isMovingToReview, setIsMovingToReview] = useState(false);
   const [finalEmail, setFinalEmail] = useState('');
   const [showDocumentSelector, setShowDocumentSelector] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [fullScreenDoc, setFullScreenDoc] = useState(null);
 
   const showToast = (message, type = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => {
-      setToast(prev => ({ ...prev, show: false }));
-    }, 5000);
+    onShowToast?.(message, type);
   };
 
   const handleChange = (e) => {
@@ -101,10 +114,14 @@ export default function IntakeForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    const genStartTime = new Date().toISOString();
     const payload = {
       ...formData,
       generate_sla: toggles.generateSLA,
       generate_nda: toggles.generateNDA,
+      save_to_db: false,
+      create_record: false,
+      preview_only: true
     };
 
     console.log('Sending payload to webhook:', payload);
@@ -125,9 +142,29 @@ export default function IntakeForm() {
           // Fallback if no valid JSON
         }
 
+        // Clean up any premature contract rows that the generation webhook may have inserted
+        const returnedIds = [
+          data.contract_id,
+          data.id,
+          data.sla_contract_id,
+          data.nda_contract_id,
+          ...(data.contract_ids || []),
+          ...(data.ids || [])
+        ].filter(Boolean);
+
+        if (returnedIds.length > 0) {
+          await deleteContractRecords(returnedIds);
+        }
+        await cleanupPrematureContracts(genStartTime, formData.client_email_address, formData.client_company_name);
+
+        const slaUrl = data.sla_url !== undefined ? data.sla_url : (toggles.generateSLA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null);
+        const ndaUrl = data.nda_url !== undefined ? data.nda_url : (toggles.generateNDA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null);
+
         const docs = {
-          sla_url: data.sla_url !== undefined ? data.sla_url : (toggles.generateSLA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null),
-          nda_url: data.nda_url !== undefined ? data.nda_url : (toggles.generateNDA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null),
+          sla_url: slaUrl,
+          nda_url: ndaUrl,
+          sla_file_id: data.sla_file_id || data.sla_drive_file_id || data.sla_id || extractDriveFileId(slaUrl),
+          nda_file_id: data.nda_file_id || data.nda_drive_file_id || data.nda_id || extractDriveFileId(ndaUrl),
         };
         setGeneratedDocs(docs);
         setFinalEmail(formData.client_email_address);
@@ -139,9 +176,13 @@ export default function IntakeForm() {
     } catch (error) {
       console.error('Error generating documents:', error);
       // Simulate success for testing modal in dev environment
+      const fallbackSla = toggles.generateSLA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null;
+      const fallbackNda = toggles.generateNDA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null;
       setGeneratedDocs({
-        sla_url: toggles.generateSLA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null,
-        nda_url: toggles.generateNDA ? 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' : null,
+        sla_url: fallbackSla,
+        nda_url: fallbackNda,
+        sla_file_id: extractDriveFileId(fallbackSla),
+        nda_file_id: extractDriveFileId(fallbackNda),
       });
       setFinalEmail(formData.client_email_address);
       setModalStep('review');
@@ -151,28 +192,87 @@ export default function IntakeForm() {
     }
   };
 
-  const handleApprove = async () => {
-    setIsApproving(true);
+  const handleMoveToReview = async () => {
+    setIsMovingToReview(true);
     try {
-      const payload = {
-        client_email: finalEmail,
-        client_company_name: formData.client_company_name,
-        client_signatory_name: formData.client_signatory_name,
-        effective_date: formData.effective_date,
-        sla_url: generatedDocs.sla_url,
-        nda_url: generatedDocs.nda_url
-      };
+      const recordsToInsert = [];
+      const recipientEmail = (finalEmail || formData.client_email_address || '').trim();
+      const companyName = (formData.client_company_name || 'Client Contract').trim();
+      const clientName = (formData.client_signatory_name || '').trim();
+      const reraNumber = (formData.rera_license_no || '').trim() || null;
+      const clientAddress = (formData.client_address || '').trim() || null;
+      const slaFileId = generatedDocs.sla_file_id || extractDriveFileId(generatedDocs.sla_url);
+      const ndaFileId = generatedDocs.nda_file_id || extractDriveFileId(generatedDocs.nda_url);
 
-      const response = await fetch('https://n8n.srv1711190.hstgr.cloud/webhook/edae8907-9504-46c1-979f-32e1e0ed1572', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      if (toggles.generateSLA && generatedDocs.sla_url) {
+        recordsToInsert.push({
+          client_name: clientName,
+          company_name: companyName,
+          rera_number: reraNumber,
+          client_address: clientAddress,
+          client_email: recipientEmail,
+          doc_type: 'SLA',
+          status: 'in_review',
+          drive_file_url: generatedDocs.sla_url,
+          drive_file_id: slaFileId
+        });
+      }
 
-      if (!response.ok) throw new Error('Network response was not ok');
+      if (toggles.generateNDA && generatedDocs.nda_url) {
+        recordsToInsert.push({
+          client_name: clientName,
+          company_name: companyName,
+          rera_number: reraNumber,
+          client_address: clientAddress,
+          client_email: recipientEmail,
+          doc_type: 'NDA',
+          status: 'in_review',
+          drive_file_url: generatedDocs.nda_url,
+          drive_file_id: ndaFileId
+        });
+      }
 
-      showToast('Documents approved and dispatched successfully!', 'success');
+      // Fallback if toggles were not set but URLs exist
+      if (recordsToInsert.length === 0) {
+        if (generatedDocs.sla_url) {
+          recordsToInsert.push({
+            client_name: clientName,
+            company_name: companyName,
+            rera_number: reraNumber,
+            client_address: clientAddress,
+            client_email: recipientEmail,
+            doc_type: 'SLA',
+            status: 'in_review',
+            drive_file_url: generatedDocs.sla_url,
+            drive_file_id: slaFileId
+          });
+        }
+        if (generatedDocs.nda_url) {
+          recordsToInsert.push({
+            client_name: clientName,
+            company_name: companyName,
+            rera_number: reraNumber,
+            client_address: clientAddress,
+            client_email: recipientEmail,
+            doc_type: 'NDA',
+            status: 'in_review',
+            drive_file_url: generatedDocs.nda_url,
+            drive_file_id: ndaFileId
+          });
+        }
+      }
+
+      const result = await createContractRecords(recordsToInsert);
+      if (result.error && result.isConfigured) {
+        throw result.error;
+      }
+
+      // Success confirmation
+      showToast('Sent to Approval Center for review.', 'success');
       setShowModal(false);
+      setModalStep('review');
+
+      // Reset the form data after successful creation in database
       setFormData({
         client_company_name: '',
         client_address: '',
@@ -184,16 +284,25 @@ export default function IntakeForm() {
         client_email_address: '',
       });
       setToggles({ generateSLA: false, generateNDA: false });
+      setFinalEmail('');
     } catch (error) {
-      console.error('Error approving documents:', error);
-      showToast('Failed to dispatch documents. Please try again.', 'error');
+      console.error('Error moving contract to review:', error);
+      showToast('Failed to send documents for review. Please try again.', 'error');
     } finally {
-      setIsApproving(false);
+      setIsMovingToReview(false);
     }
   };
 
-  const handleReject = () => {
+  const handleCancel = async () => {
+    // Simply close the modal and preserve all form fields & toggles for the user
     setShowModal(false);
+    setModalStep('review');
+    // Ensure no orphan contracts exist in the database from this generation attempt
+    await cleanupPrematureContracts(
+      new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      formData.client_email_address,
+      formData.client_company_name
+    );
   };
 
   const handleEditDocuments = () => {
@@ -323,14 +432,8 @@ export default function IntakeForm() {
                     <FileText className="text-glow" />
                     {modalStep === 'review' && 'Review Documents'}
                     {modalStep === 'edit' && 'Edit Documents'}
-                    {modalStep === 'dispatch' && 'Final Dispatch'}
+                    {modalStep === 'dispatch' && 'Review Documents'}
                   </h3>
-                  <button
-                    onClick={handleReject}
-                    className="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
-                  >
-                    <X size={24} />
-                  </button>
                 </div>
 
                 {/* Editor Content */}
@@ -367,7 +470,7 @@ export default function IntakeForm() {
 
                   <div className="flex flex-col sm:flex-row gap-3 md:gap-4 w-full md:w-auto mt-2 md:mt-0">
                     <button
-                      onClick={handleReject}
+                      onClick={handleCancel}
                       className="flex-1 md:flex-none px-6 py-3 rounded-xl border border-white/20 text-white hover:bg-white/10 transition-colors font-semibold"
                     >
                       Cancel
@@ -382,12 +485,12 @@ export default function IntakeForm() {
                           Edit Documents
                         </button>
                         <button
-                          onClick={handleApprove}
-                          disabled={isApproving}
-                          className={`flex-1 md:flex-none px-8 py-3 rounded-xl bg-gradient-to-r from-glow to-blue-600 text-black font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity ${isApproving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          onClick={handleMoveToReview}
+                          disabled={isMovingToReview}
+                          className={`flex-1 md:flex-none px-8 py-3 rounded-xl bg-gradient-to-r from-glow to-blue-600 text-black font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity ${isMovingToReview ? 'opacity-70 cursor-not-allowed' : ''}`}
                         >
-                          {isApproving ? <Loader2 className="animate-spin" size={18} /> : null}
-                          {isApproving ? 'Dispatching...' : 'Send Directly'}
+                          {isMovingToReview ? <Loader2 className="animate-spin" size={18} /> : null}
+                          {isMovingToReview ? 'Moving to Review...' : 'Move to Review'}
                         </button>
                       </>
                     )}
@@ -411,12 +514,12 @@ export default function IntakeForm() {
                           Edit Again
                         </button>
                         <button
-                          onClick={handleApprove}
-                          disabled={isApproving}
-                          className={`flex-1 md:flex-none px-8 py-3 rounded-xl bg-gradient-to-r from-glow to-blue-600 text-black font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(0,243,255,0.4)] hover:shadow-[0_0_30px_rgba(0,243,255,0.6)] ${isApproving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          onClick={handleMoveToReview}
+                          disabled={isMovingToReview}
+                          className={`flex-1 md:flex-none px-8 py-3 rounded-xl bg-gradient-to-r from-glow to-blue-600 text-black font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(0,243,255,0.4)] hover:shadow-[0_0_30px_rgba(0,243,255,0.6)] ${isMovingToReview ? 'opacity-70 cursor-not-allowed' : ''}`}
                         >
-                          {isApproving ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
-                          {isApproving ? 'Dispatching...' : 'Confirm & Dispatch'}
+                          {isMovingToReview ? <Loader2 className="animate-spin" size={18} /> : null}
+                          {isMovingToReview ? 'Moving to Review...' : 'Move to Review'}
                         </button>
                       </>
                     )}
@@ -515,24 +618,7 @@ export default function IntakeForm() {
         document.body
       )}
 
-      {/* Modern Toast Notification */}
-      <AnimatePresence>
-        {toast.show && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-8 right-8 z-[10000] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-lg border border-white/10 font-medium text-white"
-            style={{
-              backgroundColor: toast.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-              boxShadow: toast.type === 'success' ? '0 10px 40px -10px rgba(16,185,129,0.5)' : '0 10px 40px -10px rgba(239,68,68,0.5)'
-            }}
-          >
-            {toast.type === 'success' ? <CheckCircle className="text-emerald-400" size={24} /> : <AlertCircle className="text-red-400" size={24} />}
-            <span className="text-sm md:text-base tracking-wide">{toast.message}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
     </div>
   );
 }
