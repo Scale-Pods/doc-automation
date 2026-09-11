@@ -1,9 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_SUPABASE_URL = 'https://eeszlgndckfyhreoynuo.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlc3psZ25kY2tmeWhyZW95bnVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3Njk3MzIsImV4cCI6MjEwNDM0NTczMn0.73uIZTHvfDzxy8yBhXh6OaVdHzmT4fMNO9QZaruII6U';
-
-// Get Supabase credentials from Vite environment (.env) or fallback
+// Get Supabase credentials strictly from Vite environment (.env / Vercel Environment Variables)
 export const getSupabaseConfig = () => {
   const envUrl = import.meta.env.VITE_SUPABASE_URL;
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -11,8 +8,8 @@ export const getSupabaseConfig = () => {
   const storedKey = typeof window !== 'undefined' ? localStorage.getItem('clm_supabase_key') : null;
 
   return {
-    url: (envUrl || storedUrl || DEFAULT_SUPABASE_URL).trim(),
-    key: (envKey || storedKey || DEFAULT_SUPABASE_ANON_KEY).trim(),
+    url: (envUrl || storedUrl || '').trim(),
+    key: (envKey || storedKey || '').trim(),
   };
 };
 
