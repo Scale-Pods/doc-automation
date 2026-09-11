@@ -658,9 +658,16 @@ export default function AnalyticsAudit({ onShowToast }) {
 
                               {/* Center: Latest/Current Status Transition Badge + Lifecycle Events Indicator */}
                               <div className="flex items-center gap-3.5 flex-wrap flex-1 md:justify-center">
-                                {latestEvt.from_status || latestEvt.to_status ? (
+                                {doc.events.length === 1 && (latestEvt.to_status?.toLowerCase() === 'in_review' || (!latestEvt.from_status || latestEvt.from_status?.toLowerCase() === 'draft')) ? (
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    {renderStatusBadge(latestEvt.from_status)}
+                                    {renderStatusBadge('in_review')}
+                                    <span className="text-[11px] text-amber-400/90 font-medium">
+                                      Currently In Review ({formatDuration(Math.max(0, Date.now() - (latestEvt.timestamp || Date.now())), true)})
+                                    </span>
+                                  </div>
+                                ) : latestEvt.from_status || latestEvt.to_status ? (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {renderStatusBadge(latestEvt.from_status?.toLowerCase() === 'draft' ? 'in_review' : latestEvt.from_status)}
                                     <ArrowRight size={13} className="text-gray-500 shrink-0" />
                                     {renderStatusBadge(latestEvt.to_status)}
                                   </div>
@@ -714,7 +721,10 @@ export default function AnalyticsAudit({ onShowToast }) {
                                         const nextEvent = !isLast ? doc.events[eIdx + 1] : null;
                                         const nextTheme = nextEvent ? getStatusTheme(nextEvent.to_status) : null;
                                         
-                                        // For Event #N (most recent): elapsed duration to now (ongoing/current)
+                                        const isInitialCreation = (!event.from_status || event.from_status?.toLowerCase() === 'draft') && 
+                                                                  (event.to_status?.toLowerCase() === 'in_review');
+
+                                        // Elapsed duration for this state
                                         const elapsedMs = isLast
                                           ? Math.max(0, Date.now() - (event.timestamp || 0))
                                           : Math.max(0, (nextEvent?.timestamp || event.timestamp || 0) - (event.timestamp || 0));
@@ -722,6 +732,36 @@ export default function AnalyticsAudit({ onShowToast }) {
                                         const durationStr = formatDuration(elapsedMs, isLast);
                                         const durationOnly = getDurationOnlyString(elapsedMs);
                                         const isOngoingWaiting = isLast && isWaitingQueueState(event.to_status);
+
+                                        // Dynamic, accurate sentence for the state duration
+                                        let eventDescription = null;
+                                        if (isInitialCreation) {
+                                          if (isLast) {
+                                            eventDescription = (
+                                              <span>
+                                                Currently <span className="text-amber-400 font-medium">In Review</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> (Awaiting initial review & approval decision)
+                                              </span>
+                                            );
+                                          } else {
+                                            eventDescription = (
+                                              <span>
+                                                Remained in <span className="text-amber-400 font-medium">Review</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className="text-gray-300 font-medium">{nextTheme?.label || 'Next State'}</span>
+                                              </span>
+                                            );
+                                          }
+                                        } else if (isLast) {
+                                          eventDescription = (
+                                            <span>
+                                              Currently in <span className="text-gray-300 font-medium">{toTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span>
+                                            </span>
+                                          );
+                                        } else {
+                                          eventDescription = (
+                                            <span>
+                                              Remained in <span className="text-gray-300 font-medium">{toTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className="text-gray-300 font-medium">{nextTheme?.label || 'Next State'}</span>
+                                            </span>
+                                          );
+                                        }
 
                                         return (
                                           <div key={event.id || eIdx} className="relative flex items-start gap-4 z-10">
@@ -748,11 +788,25 @@ export default function AnalyticsAudit({ onShowToast }) {
                                                     <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                                                       Event #{eIdx + 1}:
                                                     </span>
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                      {renderStatusBadge(event.from_status)}
-                                                      <ArrowRight size={13} className="text-gray-500 shrink-0" />
-                                                      {renderStatusBadge(event.to_status)}
-                                                    </div>
+
+                                                    {/* Transition Badges */}
+                                                    {isInitialCreation && isLast ? (
+                                                      <div className="flex items-center gap-2">
+                                                        {renderStatusBadge('in_review')}
+                                                      </div>
+                                                    ) : isInitialCreation && !isLast ? (
+                                                      <div className="flex items-center gap-2 flex-wrap">
+                                                        {renderStatusBadge('in_review')}
+                                                        <ArrowRight size={13} className="text-gray-500 shrink-0" />
+                                                        {renderStatusBadge(nextEvent?.to_status || 'approvals')}
+                                                      </div>
+                                                    ) : (
+                                                      <div className="flex items-center gap-2 flex-wrap">
+                                                        {renderStatusBadge(event.from_status?.toLowerCase() === 'draft' ? 'in_review' : event.from_status)}
+                                                        <ArrowRight size={13} className="text-gray-500 shrink-0" />
+                                                        {renderStatusBadge(event.to_status)}
+                                                      </div>
+                                                    )}
 
                                                     {/* State Duration Metric Pill */}
                                                     <div>
@@ -769,11 +823,9 @@ export default function AnalyticsAudit({ onShowToast }) {
                                                     </div>
                                                   </div>
 
-                                                  {/* Always-Visible Secondary / Muted Duration Transition Text */}
+                                                  {/* Clear, Accurate Duration Explanation Text */}
                                                   <div className="text-[11px] text-gray-400 font-normal leading-relaxed pl-0.5">
-                                                    <span>
-                                                      Remained <span className="text-gray-300 font-medium">{fromTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className="text-gray-300 font-medium">{toTheme.label}</span>
-                                                    </span>
+                                                    {eventDescription}
                                                   </div>
                                                 </div>
 
