@@ -15,22 +15,16 @@ import {
   ExternalLink,
   Maximize2,
   Minimize2,
-  Database,
   Filter,
   CheckCircle2,
   Clock,
-  ShieldCheck,
   AlertCircle,
-  Key,
   Layers,
   RotateCcw,
   Send
 } from 'lucide-react';
 import {
-  fetchContracts,
-  getSupabaseConfig,
-  isSupabaseConfigured,
-  saveSupabaseCredentials
+  fetchContracts
 } from '../lib/supabaseClient';
 
 export default function PipelineApprovals({ onShowToast }) {
@@ -49,16 +43,12 @@ export default function PipelineApprovals({ onShowToast }) {
     isSubmitting: false
   });
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [supabaseConfig, setSupabaseConfig] = useState(getSupabaseConfig());
-  const [isConfigured, setIsConfigured] = useState(isSupabaseConfigured());
 
   const loadContracts = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
       const result = await fetchContracts();
-      setIsConfigured(result.isConfigured);
       if (result.error) {
         setFetchError(result.error.message || 'Failed to fetch contracts');
         setContracts([]);
@@ -292,19 +282,6 @@ export default function PipelineApprovals({ onShowToast }) {
     setIsFullScreen(false);
   };
 
-  const handleSaveConfig = (e) => {
-    e.preventDefault();
-    if (!supabaseConfig.url || !supabaseConfig.key) {
-      onShowToast?.('Please provide both Supabase URL and Anon Key', 'error');
-      return;
-    }
-    saveSupabaseCredentials(supabaseConfig.url, supabaseConfig.key);
-    setIsConfigured(true);
-    setShowConfigModal(false);
-    onShowToast?.('Supabase credentials saved. Fetching live contracts...', 'success');
-    loadContracts();
-  };
-
   // Status Counts for filter tabs
   const counts = {
     all: contracts.length,
@@ -467,19 +444,6 @@ export default function PipelineApprovals({ onShowToast }) {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Supabase Status Indicator & Config Toggle */}
-            <button
-              onClick={() => setShowConfigModal(true)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${isConfigured && !fetchError
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
-                }`}
-              title="Click to manage Supabase credentials"
-            >
-              <Database size={14} className={isConfigured && !fetchError ? "text-emerald-400" : "text-amber-400"} />
-              <span>{isConfigured && !fetchError ? 'Supabase Live Connected' : 'Connect Supabase'}</span>
-            </button>
-
             {/* Refresh Button */}
             <button
               onClick={loadContracts}
@@ -492,39 +456,18 @@ export default function PipelineApprovals({ onShowToast }) {
           </div>
         </div>
 
-        {/* Not Configured Banner */}
-        {!isConfigured && (
-          <div className="glass-panel p-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <Key className="text-amber-400 mt-1 shrink-0" size={22} />
-              <div>
-                <h3 className="text-white font-bold text-sm">Supabase Credentials Needed</h3>
-                <p className="text-xs text-gray-300 mt-0.5">
-                  Provide your Supabase URL & Anon Key to fetch real rows directly from your <code className="text-amber-300 font-mono">contracts</code> table.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowConfigModal(true)}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-400 text-dark hover:bg-amber-300 transition-colors shrink-0"
-            >
-              Enter Credentials
-            </button>
-          </div>
-        )}
-
         {/* Fetch Error Banner */}
-        {fetchError && isConfigured && (
+        {fetchError && (
           <div className="glass-panel p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 mb-6 flex items-center justify-between gap-3 text-xs text-rose-300">
             <div className="flex items-center gap-2">
               <AlertCircle size={16} className="text-rose-400 shrink-0" />
               <span><strong>Error loading contracts:</strong> {fetchError}</span>
             </div>
             <button
-              onClick={() => setShowConfigModal(true)}
+              onClick={loadContracts}
               className="underline hover:text-white"
             >
-              Check Settings
+              Retry
             </button>
           </div>
         )}
@@ -937,87 +880,6 @@ export default function PipelineApprovals({ onShowToast }) {
                 allow="autoplay"
               />
             </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
-
-      {/* Supabase Configuration Modal */}
-      {showConfigModal && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass-panel border border-white/20 rounded-2xl max-w-lg w-full p-6 shadow-2xl bg-slate-900/95"
-          >
-            <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
-              <div className="flex items-center gap-2.5">
-                <Database className="text-glow" size={22} />
-                <h3 className="font-bold text-white text-lg">Supabase Connection Settings</h3>
-              </div>
-              <button
-                onClick={() => setShowConfigModal(false)}
-                className="text-gray-400 hover:text-white p-1"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveConfig} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                  Supabase Project URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://xyzcompany.supabase.co"
-                  value={supabaseConfig.url}
-                  onChange={(e) => setSupabaseConfig(prev => ({ ...prev, url: e.target.value }))}
-                  required
-                  className="w-full bg-black/50 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-glow font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                  Supabase Anon Key
-                </label>
-                <input
-                  type="password"
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  value={supabaseConfig.key}
-                  onChange={(e) => setSupabaseConfig(prev => ({ ...prev, key: e.target.value }))}
-                  required
-                  className="w-full bg-black/50 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-glow font-mono"
-                />
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <ShieldCheck size={14} />
-                  <span>Real Supabase Contracts Table</span>
-                </div>
-                <p className="text-blue-200/80">
-                  Queries <code className="text-white font-mono">contracts</code> directly to fetch live UUIDs, statuses, and documents.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setShowConfigModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-glow text-dark shadow-[0_0_15px_rgba(0,243,255,0.4)] hover:brightness-110 transition-all"
-                >
-                  Connect & Fetch Live Data
-                </button>
-              </div>
-            </form>
           </motion.div>
         </div>,
         document.body
