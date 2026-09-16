@@ -1,7 +1,28 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Loader2, X, Check, FileText, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
+import { 
+  Zap, 
+  Loader2, 
+  X, 
+  Check, 
+  FileText, 
+  Bold, 
+  Italic, 
+  Underline, 
+  AlignLeft, 
+  AlignCenter, 
+  AlignRight,
+  Building2,
+  Calendar,
+  Mail,
+  MapPin,
+  Globe,
+  ShieldCheck,
+  UserCheck,
+  Briefcase,
+  HelpCircle
+} from 'lucide-react';
 import { createContractRecords, deleteContractRecords, cleanupPrematureContracts } from '../lib/supabaseClient';
 
 export const extractDriveFileId = (url, explicitId) => {
@@ -340,37 +361,135 @@ export default function IntakeForm({ onShowToast }) {
             </h2>
 
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6 mb-8">
+              {/* Client Company Name */}
               <div>
-                <label className="label-text">Client Company Name</label>
-                <input type="text" name="client_company_name" value={formData.client_company_name} onChange={handleChange} className="input-field" required />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <Building2 size={16} className="text-glow" />
+                  Client Company Name <span className="text-cyan-400">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="client_company_name" 
+                  value={formData.client_company_name} 
+                  onChange={handleChange} 
+                  placeholder="e.g. Apex Global Technologies LLC" 
+                  className="input-field" 
+                  required 
+                />
               </div>
+
+              {/* Effective Date */}
               <div>
-                <label className="label-text">Effective Date</label>
-                <input type="date" name="effective_date" value={formData.effective_date} onChange={handleChange} className="input-field [color-scheme:dark]" required />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <Calendar size={16} className="text-glow" />
+                  Effective Date <span className="text-cyan-400">*</span>
+                </label>
+                <input 
+                  type="date" 
+                  name="effective_date" 
+                  value={formData.effective_date} 
+                  onChange={handleChange} 
+                  className="input-field [color-scheme:dark]" 
+                  required 
+                />
               </div>
+
+              {/* Client Email Address */}
               <div>
-                <label className="label-text">Client Email Address</label>
-                <input type="email" name="client_email_address" value={formData.client_email_address} onChange={handleChange} className="input-field" required />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <Mail size={16} className="text-glow" />
+                  Client Email Address <span className="text-cyan-400">*</span>
+                </label>
+                <input 
+                  type="email" 
+                  name="client_email_address" 
+                  value={formData.client_email_address} 
+                  onChange={handleChange} 
+                  placeholder="e.g. legal@apexsolutions.ae or contact@company.com" 
+                  className="input-field" 
+                  required 
+                />
               </div>
+
+              {/* Client Address */}
               <div className="col-span-full">
-                <label className="label-text">Client Address</label>
-                <textarea name="client_address" value={formData.client_address} onChange={handleChange} className="input-field min-h-[100px] resize-none" />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <MapPin size={16} className="text-glow" />
+                  Client Address
+                </label>
+                <textarea 
+                  name="client_address" 
+                  value={formData.client_address} 
+                  onChange={handleChange} 
+                  placeholder="e.g. Suite 804, Building 5, Bay Square, Business Bay, P.O. Box 74211" 
+                  className="input-field min-h-[90px] resize-none" 
+                />
               </div>
+
+              {/* Client Location */}
               <div>
-                <label className="label-text">Client Location</label>
-                <input type="text" name="client_location" value={formData.client_location} onChange={handleChange} className="input-field" />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <Globe size={16} className="text-glow" />
+                  Client Location
+                </label>
+                <input 
+                  type="text" 
+                  name="client_location" 
+                  value={formData.client_location} 
+                  onChange={handleChange} 
+                  placeholder="e.g. Dubai, United Arab Emirates" 
+                  className="input-field" 
+                />
               </div>
+
+              {/* RERA License No. */}
               <div>
-                <label className="label-text">RERA License No.</label>
-                <input type="text" name="rera_license_no" value={formData.rera_license_no} onChange={handleChange} className="input-field" />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <ShieldCheck size={16} className="text-glow" />
+                  RERA License No.
+                </label>
+                <input 
+                  type="text" 
+                  name="rera_license_no" 
+                  value={formData.rera_license_no} 
+                  onChange={handleChange} 
+                  placeholder="e.g. RERA-58492 or ORN-10293" 
+                  className="input-field" 
+                />
               </div>
+
+              {/* Client Signatory Name */}
               <div>
-                <label className="label-text">Client Signatory Name</label>
-                <input type="text" name="client_signatory_name" value={formData.client_signatory_name} onChange={handleChange} className="input-field" required />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <UserCheck size={16} className="text-glow" />
+                  Client Signatory Name <span className="text-cyan-400">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="client_signatory_name" 
+                  value={formData.client_signatory_name} 
+                  onChange={handleChange} 
+                  placeholder="e.g. Tariq Mansoor Al-Hashemi" 
+                  className="input-field" 
+                  required 
+                />
               </div>
+
+              {/* Client Designation */}
               <div>
-                <label className="label-text">Client Designation</label>
-                <input type="text" name="client_designation" value={formData.client_designation} onChange={handleChange} className="input-field" required />
+                <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
+                  <Briefcase size={16} className="text-glow" />
+                  Client Designation <span className="text-cyan-400">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  name="client_designation" 
+                  value={formData.client_designation} 
+                  onChange={handleChange} 
+                  placeholder="e.g. Managing Director / Chief Executive Officer" 
+                  className="input-field" 
+                  required 
+                />
               </div>
             </div>
 
@@ -462,7 +581,8 @@ export default function IntakeForm({ onShowToast }) {
                         type="email"
                         value={finalEmail}
                         onChange={(e) => setFinalEmail(e.target.value)}
-                        className="w-full md:flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-glow focus:ring-1 focus:ring-glow transition-all md:max-w-md"
+                        placeholder="e.g. client@company.com"
+                        className="w-full md:flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-gray-500 placeholder:text-sm focus:outline-none focus:border-glow focus:ring-1 focus:ring-glow transition-all md:max-w-md"
                       />
                     </div>
                   )}

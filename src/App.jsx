@@ -7,8 +7,16 @@ import BackgroundAnimation from './components/BackgroundAnimation';
 import Sidebar from './components/Sidebar';
 import PipelineApprovals from './components/PipelineApprovals';
 import AnalyticsAudit from './components/AnalyticsAudit';
+import SigningComplete from './components/SigningComplete';
 
 const VALID_VIEWS = ['analytics', 'generation', 'pipeline'];
+
+const isSigningCompleteRoute = () => {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname.toLowerCase().replace(/\/$/, '');
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '').split('?')[0];
+  return path === '/signing-complete' || hash === 'signing-complete';
+};
 
 const getInitialView = () => {
   if (typeof window !== 'undefined') {
@@ -28,6 +36,7 @@ const getInitialView = () => {
 };
 
 function App() {
+  const [isSigningPage, setIsSigningPage] = useState(isSigningCompleteRoute);
   const [currentView, setCurrentView] = useState(getInitialView);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
@@ -44,26 +53,40 @@ function App() {
     }
   };
 
-  // Synchronize with hash changes and restore state on mount
+  // Synchronize with hash changes and route changes
   useEffect(() => {
-    const initial = getInitialView();
-    setCurrentView(initial);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('clm_active_tab', initial);
-      if (!window.location.hash) {
-        window.history.replaceState(null, '', `#${initial}`);
-      }
-
-      const onHashChange = () => {
-        const updated = getInitialView();
-        setCurrentView(updated);
-        localStorage.setItem('clm_active_tab', updated);
+      const handleRouteChange = () => {
+        const isSigning = isSigningCompleteRoute();
+        setIsSigningPage(isSigning);
+        if (!isSigning) {
+          const updated = getInitialView();
+          setCurrentView(updated);
+          localStorage.setItem('clm_active_tab', updated);
+        }
       };
 
-      window.addEventListener('hashchange', onHashChange);
-      return () => window.removeEventListener('hashchange', onHashChange);
+      if (!isSigningPage) {
+        const initial = getInitialView();
+        setCurrentView(initial);
+        localStorage.setItem('clm_active_tab', initial);
+        if (!window.location.hash) {
+          window.history.replaceState(null, '', `#${initial}`);
+        }
+      }
+
+      window.addEventListener('hashchange', handleRouteChange);
+      window.addEventListener('popstate', handleRouteChange);
+      return () => {
+        window.removeEventListener('hashchange', handleRouteChange);
+        window.removeEventListener('popstate', handleRouteChange);
+      };
     }
-  }, []);
+  }, [isSigningPage]);
+
+  if (isSigningPage) {
+    return <SigningComplete />;
+  }
 
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
