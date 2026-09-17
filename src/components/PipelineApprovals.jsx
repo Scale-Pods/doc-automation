@@ -21,7 +21,9 @@ import {
   AlertCircle,
   Layers,
   RotateCcw,
-  Send
+  Send,
+  ShieldCheck,
+  AlertTriangle
 } from 'lucide-react';
 import {
   fetchContracts
@@ -69,7 +71,9 @@ export default function PipelineApprovals({ onShowToast }) {
     loadContracts();
   }, []);
 
-  // Single contract action handler (Approve or Reopen)
+  // All live contracts from Supabase are displayed with filter tabs
+
+  // Single contract action handler (Approve & Send or Reopen)
   const handleAction = async (contract, actionType) => {
     const contractId = contract.id;
     setActionLoading(prev => ({ ...prev, [contractId]: actionType }));
@@ -108,26 +112,24 @@ export default function PipelineApprovals({ onShowToast }) {
       const docLabel = contract.doc_type || 'Contract';
       const successMsg = actionType === 'reopen'
         ? `Contract ${clientDisplayName ? `for ${clientDisplayName} ` : ''}reopened for review!`
-        : `${docLabel} ${clientDisplayName ? `for ${clientDisplayName} ` : ''}approved successfully!`;
+        : `${docLabel} ${clientDisplayName ? `for ${clientDisplayName} ` : ''}approved & sent for signature!`;
 
       onShowToast?.(successMsg, 'success');
 
-      // Optimistically flip status to in_review if reopened
-      if (actionType === 'reopen') {
-        setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'in_review' } : c));
-      }
+      // Optimistic status update
+      const targetStatus = actionType === 'reopen' ? 'in_review' : 'sent';
+      setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: targetStatus } : c));
 
       // Reload live contracts from Supabase
       await loadContracts();
     } catch (error) {
       console.error('Error submitting contract action:', error);
       if (actionType === 'reopen') {
-        // Optimistic fallback update
         setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'in_review' } : c));
         onShowToast?.(`Contract reopened for review. Status updated.`, 'success');
       } else {
         const docLabel = contract.doc_type || 'Contract';
-        onShowToast?.(`Failed to approve ${docLabel} for ${companyName || 'client'}: ${error.message || 'Check webhook status'}`, 'error');
+        onShowToast?.(`Failed to process ${docLabel} for ${companyName || 'client'}: ${error.message || 'Check webhook status'}`, 'error');
       }
     } finally {
       setActionLoading(prev => {
@@ -226,7 +228,7 @@ export default function PipelineApprovals({ onShowToast }) {
       reason: reasonText
     };
 
-    console.log('Dispatching rejection payload to webhook:', payload);
+    console.log('Dispatching reject payload to webhook:', payload);
 
     try {
       const response = await fetch('https://n8n.srv1711190.hstgr.cloud/webhook/contract-approval', {
@@ -241,15 +243,11 @@ export default function PipelineApprovals({ onShowToast }) {
 
       onShowToast?.(`Contract successfully rejected with reason recorded.`, 'success');
 
-      // Optimistically update status to terminated with rejection reason
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'terminated', rejection_reason: reasonText } : c));
       closeRejectModal();
-
-      // Reload from Supabase
       await loadContracts();
     } catch (error) {
-      console.error('Error submitting contract rejection:', error);
-      // Optimistic fallback for testing
+      console.error('Error submitting rejection:', error);
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'terminated', rejection_reason: reasonText } : c));
       onShowToast?.(`Contract rejected. Status updated.`, 'success');
       closeRejectModal();
@@ -286,17 +284,38 @@ export default function PipelineApprovals({ onShowToast }) {
   const counts = {
     all: contracts.length,
     in_review: contracts.filter(c => (c.status || '').toLowerCase() === 'in_review').length,
-    approvals: contracts.filter(c => (c.status || '').toLowerCase() === 'approvals').length,
-    executed: contracts.filter(c => (c.status || '').toLowerCase() === 'executed').length,
-    terminated: contracts.filter(c => (c.status || '').toLowerCase() === 'terminated').length,
+    approvals: contracts.filter(c => {
+      const s = (c.status || '').toLowerCase();
+      return s === 'approvals' || s === 'approved' || s === 'sent' || s === 'sent_for_signature';
+    }).length,
+    executed: contracts.filter(c => {
+      const s = (c.status || '').toLowerCase();
+      return s === 'executed' || s === 'completed';
+    }).length,
+    terminated: contracts.filter(c => (c.status || '').toLowerCase() === 'terminated' || (c.status || '').toLowerCase() === 'rejected').length,
   };
 
   // Filter individual contracts
   const filteredContracts = useMemo(() => {
     return contracts.filter(contract => {
+      const statusLower = (contract.status || '').toLowerCase().trim();
       // Tab filter
-      if (activeFilter !== 'all' && (contract.status || '').toLowerCase() !== activeFilter.toLowerCase()) {
-        return false;
+      if (activeFilter !== 'all') {
+        if (activeFilter === 'approvals' || activeFilter === 'sent') {
+          if (statusLower !== 'sent' && statusLower !== 'sent_for_signature' && statusLower !== 'approved' && statusLower !== 'approvals') {
+            return false;
+          }
+        } else if (activeFilter === 'executed') {
+          if (statusLower !== 'executed' && statusLower !== 'completed') {
+            return false;
+          }
+        } else if (activeFilter === 'terminated') {
+          if (statusLower !== 'terminated' && statusLower !== 'rejected') {
+            return false;
+          }
+        } else if (statusLower !== activeFilter.toLowerCase()) {
+          return false;
+        }
       }
 
       // Search query filter
@@ -340,6 +359,8 @@ export default function PipelineApprovals({ onShowToast }) {
             In Review
           </span>
         );
+      case 'approved':
+      case 'approvals':
       case 'sent':
       case 'sent_for_signature':
         return (
@@ -348,19 +369,48 @@ export default function PipelineApprovals({ onShowToast }) {
             Sent for Signature
           </span>
         );
-      case 'approvals':
-      case 'approved':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-            Approved
-          </span>
-        );
       case 'executed':
+      case 'completed':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             Executed
+          </span>
+        );
+      case 'changes_requested':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-300 border border-orange-500/30 shadow-[0_0_10px_rgba(249,115,22,0.15)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></span>
+            Changes Requested
+          </span>
+        );
+      case 'resent_for_signature':
+      case 'resent':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-200 border border-indigo-400/30 shadow-[0_0_10px_rgba(129,140,248,0.2)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-300"></span>
+            Sent for Resignature
+          </span>
+        );
+      case 'signature_due':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+            Signature Due
+          </span>
+        );
+      case 'due_for_renewal':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-300 border border-teal-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+            Due for Renewal
+          </span>
+        );
+      case 'expired':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+            Expired
           </span>
         );
       case 'terminated':
@@ -488,14 +538,16 @@ export default function PipelineApprovals({ onShowToast }) {
                 <button
                   key={tab.key}
                   onClick={() => setActiveFilter(tab.key)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 flex items-center gap-2 ${isSelected
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                    isSelected
                       ? 'bg-glow text-dark shadow-[0_0_15px_rgba(0,243,255,0.4)]'
                       : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                    }`}
+                  }`}
                 >
                   <span>{tab.label}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSelected ? 'bg-dark/30 text-dark' : 'bg-white/10 text-gray-300'
-                    }`}>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    isSelected ? 'bg-dark/30 text-dark' : 'bg-white/10 text-gray-300'
+                  }`}>
                     {tab.count}
                   </span>
                 </button>
@@ -617,7 +669,7 @@ export default function PipelineApprovals({ onShowToast }) {
                       const driveUrl = contract.drive_file_url || contract.file_url || contract.sla_url || contract.nda_url || '';
                       const statusLower = (contract.status || '').toLowerCase();
                       const isInReview = statusLower === 'in_review';
-                      const isTerminated = statusLower === 'terminated';
+                      const isTerminated = statusLower === 'terminated' || statusLower === 'rejected';
                       const rejectionReason = contract.rejection_reason || contract.reason || '';
 
                       const isApproving = actionLoading[contract.id] === 'approve';
@@ -653,19 +705,19 @@ export default function PipelineApprovals({ onShowToast }) {
                             )}
                           </div>
 
-                          {/* Sub-row Right: Status Badge, Preview Button & Actions */}
+                          {/* Sub-row Right: Status Badge, View Doc Button & Actions */}
                           <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 flex-wrap">
                             {/* Status Badge */}
                             <div>
                               {getStatusBadge(contract.status)}
                             </div>
 
-                            {/* View Document Preview */}
+                            {/* View Doc Button */}
                             <div>
                               {driveUrl ? (
                                 <button
                                   onClick={() => openPreview(driveUrl, `${group.companyName} - ${docType}`)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer"
                                 >
                                   <Eye size={13} />
                                   <span>View Doc</span>
@@ -676,29 +728,29 @@ export default function PipelineApprovals({ onShowToast }) {
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="min-w-[170px] flex justify-end">
+                            <div className="min-w-[150px] flex justify-end">
                               {isInReview ? (
                                 <div className="flex items-center gap-2">
-                                  {/* Approve Button */}
+                                  {/* Approve & Send Button (Direct to Sent for Signature) */}
                                   <button
                                     onClick={() => handleAction(contract, 'approve')}
                                     disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50"
-                                    title="Approve contract"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer"
+                                    title="Approve and send contract for signature"
                                   >
                                     {isApproving ? (
                                       <Loader2 size={13} className="animate-spin" />
                                     ) : (
-                                      <Check size={13} strokeWidth={2.5} />
+                                      <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
                                     )}
-                                    <span>Approve</span>
+                                    <span>Approve & Send</span>
                                   </button>
 
                                   {/* Reject Button (Opens Rejection Modal) */}
                                   <button
                                     onClick={() => openRejectModal(contract)}
                                     disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer"
                                     title="Reject contract with reason"
                                   >
                                     {isRejecting ? (
@@ -714,7 +766,7 @@ export default function PipelineApprovals({ onShowToast }) {
                                 <button
                                   onClick={() => handleAction(contract, 'reopen')}
                                   disabled={isAnyActionLoading}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50 cursor-pointer"
                                   title="Reopen contract for review"
                                 >
                                   {isReopening ? (
@@ -755,7 +807,7 @@ export default function PipelineApprovals({ onShowToast }) {
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-3 border-b border-white/10 mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
                   <AlertCircle size={20} />
                 </div>
                 <div>
@@ -768,7 +820,7 @@ export default function PipelineApprovals({ onShowToast }) {
               <button
                 onClick={closeRejectModal}
                 disabled={rejectionModal.isSubmitting}
-                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -796,14 +848,14 @@ export default function PipelineApprovals({ onShowToast }) {
                   type="button"
                   onClick={closeRejectModal}
                   disabled={rejectionModal.isSubmitting}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!rejectionModal.reason.trim() || rejectionModal.isSubmitting}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {rejectionModal.isSubmitting ? (
                     <>

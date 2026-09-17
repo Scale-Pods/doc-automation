@@ -77,11 +77,13 @@ export default function AnalyticsAudit({ onShowToast }) {
   // Compute Metrics from real Supabase rows
   const totalContracts = contracts.length;
   const inReviewCount = contracts.filter(c => (c.status || '').toLowerCase() === 'in_review').length;
-  const approvalsCount = contracts.filter(c => (c.status || '').toLowerCase() === 'approvals' || (c.status || '').toLowerCase() === 'approved').length;
   const sentCount = contracts.filter(c => {
     const s = (c.status || '').toLowerCase().trim();
-    return s === 'sent' || s === 'sent_for_signature';
+    return s === 'sent' || s === 'sent_for_signature' || s === 'resent_for_signature' || s === 'resent';
   }).length;
+  const executedCount = contracts.filter(c => (c.status || '').toLowerCase() === 'executed').length;
+  const completedCount = contracts.filter(c => (c.status || '').toLowerCase() === 'completed').length;
+  const changesRequestedCount = contracts.filter(c => (c.status || '').toLowerCase() === 'changes_requested').length;
   const terminatedCount = contracts.filter(c => (c.status || '').toLowerCase() === 'terminated' || (c.status || '').toLowerCase() === 'rejected').length;
 
   const getPercent = (count) => {
@@ -113,6 +115,8 @@ export default function AnalyticsAudit({ onShowToast }) {
           glow: 'shadow-[0_0_8px_rgba(251,191,36,0.5)]',
           label: 'In Review'
         };
+      case 'approved':
+      case 'approvals':
       case 'sent':
       case 'sent_for_signature':
         return {
@@ -123,26 +127,72 @@ export default function AnalyticsAudit({ onShowToast }) {
           glow: 'shadow-[0_0_8px_rgba(168,85,247,0.5)]',
           label: 'Sent for Signature'
         };
-      case 'approvals':
-      case 'approved':
-        return {
-          bg: 'bg-blue-500/10',
-          text: 'text-blue-400',
-          border: 'border-blue-500/30',
-          dot: 'bg-blue-400',
-          glow: 'shadow-[0_0_8px_rgba(96,165,250,0.5)]',
-          label: 'Approved'
-        };
       case 'executed':
         return {
-          bg: 'bg-emerald-500/10',
-          text: 'text-emerald-400',
-          border: 'border-emerald-500/30',
-          dot: 'bg-emerald-400',
-          glow: 'shadow-[0_0_8px_rgba(52,211,153,0.5)]',
+          bg: 'bg-cyan-500/10',
+          text: 'text-cyan-300',
+          border: 'border-cyan-500/30',
+          dot: 'bg-cyan-400',
+          glow: 'shadow-[0_0_8px_rgba(6,182,212,0.5)]',
           label: 'Executed'
         };
+      case 'completed':
+        return {
+          bg: 'bg-emerald-500/15',
+          text: 'text-emerald-300',
+          border: 'border-emerald-400/40',
+          dot: 'bg-emerald-400',
+          glow: 'shadow-[0_0_10px_rgba(52,211,153,0.6)]',
+          label: 'Completed'
+        };
+      case 'changes_requested':
+        return {
+          bg: 'bg-orange-500/10',
+          text: 'text-orange-300',
+          border: 'border-orange-500/30',
+          dot: 'bg-orange-400',
+          glow: 'shadow-[0_0_8px_rgba(249,115,22,0.5)]',
+          label: 'Changes Requested'
+        };
+      case 'resent_for_signature':
+      case 'resent':
+        return {
+          bg: 'bg-indigo-500/15',
+          text: 'text-indigo-200',
+          border: 'border-indigo-400/30',
+          dot: 'bg-indigo-300',
+          glow: 'shadow-[0_0_8px_rgba(129,140,248,0.5)]',
+          label: 'Sent for Resignature'
+        };
+      case 'signature_due':
+        return {
+          bg: 'bg-blue-500/10',
+          text: 'text-blue-300',
+          border: 'border-blue-500/30',
+          dot: 'bg-blue-400',
+          glow: 'shadow-[0_0_8px_rgba(59,130,246,0.5)]',
+          label: 'Signature Due'
+        };
+      case 'due_for_renewal':
+        return {
+          bg: 'teal-500/10',
+          text: 'text-teal-300',
+          border: 'border-teal-500/30',
+          dot: 'bg-teal-400',
+          glow: 'shadow-[0_0_8px_rgba(20,184,166,0.5)]',
+          label: 'Due for Renewal'
+        };
+      case 'expired':
+        return {
+          bg: 'bg-zinc-500/10',
+          text: 'text-zinc-400',
+          border: 'border-zinc-500/30',
+          dot: 'bg-zinc-400',
+          glow: 'shadow-[0_0_8px_rgba(161,161,170,0.5)]',
+          label: 'Expired'
+        };
       case 'terminated':
+      case 'rejected':
         return {
           bg: 'bg-rose-500/10',
           text: 'text-rose-400',
@@ -158,7 +208,7 @@ export default function AnalyticsAudit({ onShowToast }) {
           border: 'border-gray-500/30',
           dot: 'bg-gray-400',
           glow: 'shadow-[0_0_8px_rgba(156,163,175,0.4)]',
-          label: status ? (status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')) : 'Draft'
+          label: status ? (status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')) : 'Draft'
         };
     }
   };
@@ -272,18 +322,45 @@ export default function AnalyticsAudit({ onShowToast }) {
 
   const isWaitingQueueState = (status) => {
     const s = (status || '').toLowerCase().trim();
-    return s === 'in_review' || s === 'draft' || s === 'awaiting_signature' || s === 'pending_signature' || s === 'pending';
+    return s === 'in_review' || s === 'sent' || s === 'sent_for_signature' || s === 'resent_for_signature' || s === 'resent' || s === 'executed' || s === 'draft' || s === 'signature_due';
   };
 
   // Two-Tier Grouping: Company -> Document -> Chronological Events
   const groupedCompanyData = useMemo(() => {
     const companyMap = {};
 
+    // 1. Ensure all contracts from contracts table are represented
+    contracts.forEach(c => {
+      const companyName = (c.company_name || c.client_name || c.client_company_name || 'Client Contract').trim();
+      const docType = (c.doc_type || 'NDA').trim();
+      const contractId = c.id || `${companyName}_${docType}`;
+      const docKey = contractId;
+
+      if (!companyMap[companyName]) {
+        companyMap[companyName] = {
+          companyName,
+          documents: {}
+        };
+      }
+
+      if (!companyMap[companyName].documents[docKey]) {
+        companyMap[companyName].documents[docKey] = {
+          docKey,
+          contractId,
+          docType,
+          companyName,
+          events: []
+        };
+      }
+    });
+
+    // 2. Add and process history records
     history.forEach(item => {
       const matched = contractsMap[item.contract_id] || {};
       const companyName = (matched.company_name || matched.client_name || matched.client_company_name || item.client_name || item.company_name || 'Client Contract').trim();
       const docType = (matched.doc_type || item.doc_type || 'NDA').trim();
       const contractId = item.contract_id || `${companyName}_${docType}`;
+      const docKey = contractId;
       
       const noteText = item.notes || item.note || item.rejection_reason || item.reason || item.comments || 
         ((item.to_status || '').toLowerCase() === 'terminated' ? (matched.rejection_reason || matched.reason) : null) || '';
@@ -308,12 +385,10 @@ export default function AnalyticsAudit({ onShowToast }) {
         };
       }
 
-      // Group by document under each company (using contract_id or unique docType)
-      const docKey = item.contract_id || `${companyName}_${docType}`;
       if (!companyMap[companyName].documents[docKey]) {
         companyMap[companyName].documents[docKey] = {
           docKey,
-          contractId: item.contract_id,
+          contractId,
           docType,
           companyName,
           events: []
@@ -323,18 +398,105 @@ export default function AnalyticsAudit({ onShowToast }) {
       companyMap[companyName].documents[docKey].events.push(eventObj);
     });
 
+    const normalizeAuditStatus = (status) => {
+      if (!status) return status;
+      const s = status.toLowerCase().trim();
+      if (s === 'approvals' || s === 'approved') return 'sent';
+      if (s === 'sent_for_signature') return 'sent';
+      if (s === 'resent') return 'resent_for_signature';
+      return s;
+    };
+
     const result = Object.values(companyMap).map(comp => {
       const docs = Object.values(comp.documents).map(doc => {
         // Sort events chronologically (oldest to newest for the vertical timeline)
         const sortedEvents = [...doc.events].sort((a, b) => a.timestamp - b.timestamp);
-        // The most recent event is the latest in chronological order
-        const latestEvent = sortedEvents[sortedEvents.length - 1] || {};
+        const contractMeta = contractsMap[doc.contractId] || {};
+
+        const cleanedEvents = [];
+        const first = sortedEvents[0];
+        const isFirstAlreadyCreation = first && (!first.from_status || normalizeAuditStatus(first.from_status) === 'draft') && normalizeAuditStatus(first.to_status) === 'in_review';
+
+        // Prepend Document Generation event if history does not start with standalone in_review creation
+        if (!isFirstAlreadyCreation) {
+          const creationDate = contractMeta.created_at || (first ? new Date(first.timestamp - 60000).toISOString() : new Date().toISOString());
+          cleanedEvents.push({
+            contract_id: doc.contractId,
+            companyName: doc.companyName,
+            docType: doc.docType,
+            from_status: null,
+            to_status: 'in_review',
+            changed_by: contractMeta.client_email || first?.changed_by || 'system',
+            rawDate: creationDate,
+            timestamp: new Date(creationDate).getTime(),
+            note: 'Document generated and submitted for review'
+          });
+        }
+
+        for (let i = 0; i < sortedEvents.length; i++) {
+          const current = sortedEvents[i];
+          const fromNorm = normalizeAuditStatus(current.from_status);
+          const toNorm = normalizeAuditStatus(current.to_status);
+
+          // If this is an initial draft -> in_review record, treat as initial generation event
+          if (cleanedEvents.length === 0 && (!fromNorm || fromNorm === 'draft') && toNorm === 'in_review') {
+            cleanedEvents.push({
+              ...current,
+              from_status: null,
+              to_status: 'in_review',
+              note: current.note || 'Document generated and submitted for review'
+            });
+            continue;
+          }
+
+          // Collapse intermediate "Sent for Resignature" dispatch events after changes_requested when executed follows
+          const isIntermediateResignDispatch = 
+            (fromNorm === 'changes_requested' || (cleanedEvents.length > 0 && cleanedEvents[cleanedEvents.length - 1].to_status === 'changes_requested')) &&
+            (toNorm === 'resent_for_signature' || toNorm === 'sent');
+          
+          const hasSubsequentExecuted = sortedEvents.slice(i + 1).some(e => normalizeAuditStatus(e.to_status) === 'executed');
+
+          if (isIntermediateResignDispatch && hasSubsequentExecuted) {
+            continue; // Skip intermediate dispatch step so Changes Requested transitions directly to Executed
+          }
+
+          let effectiveFrom = fromNorm || (cleanedEvents.length > 0 ? cleanedEvents[cleanedEvents.length - 1].to_status : 'in_review');
+          if (cleanedEvents.length > 0) {
+            const prev = cleanedEvents[cleanedEvents.length - 1];
+
+            // If already in target status, skip duplicate event (e.g. duplicate completed events)
+            if (prev.to_status === toNorm) {
+              continue;
+            }
+
+            // If previous state was changes_requested and current target is executed, transition directly from changes_requested
+            if (prev.to_status === 'changes_requested' && toNorm === 'executed') {
+              effectiveFrom = 'changes_requested';
+            } else if (fromNorm && fromNorm !== prev.to_status) {
+              effectiveFrom = prev.to_status;
+            }
+          }
+
+          // Skip any self-transition (e.g. completed -> completed, sent -> sent)
+          if (effectiveFrom === toNorm) {
+            continue;
+          }
+
+          cleanedEvents.push({
+            ...current,
+            from_status: effectiveFrom,
+            to_status: toNorm
+          });
+        }
+
+        const finalEvents = cleanedEvents.length > 0 ? cleanedEvents : sortedEvents;
+        const latestEvent = finalEvents[finalEvents.length - 1] || {};
 
         return {
           ...doc,
-          events: sortedEvents,
+          events: finalEvents,
           latestEvent,
-          totalEvents: sortedEvents.length,
+          totalEvents: finalEvents.length,
           mostRecentActor: latestEvent.changed_by || 'system',
           mostRecentTimestamp: latestEvent.rawDate
         };
@@ -358,39 +520,33 @@ export default function AnalyticsAudit({ onShowToast }) {
     }
 
     const q = searchAuditQuery.toLowerCase().trim();
-    return result.filter(comp => {
-      const companyMatches = comp.companyName.toLowerCase().includes(q);
-      const matchingDocs = comp.documents.filter(doc => {
-        const docMatches = doc.docType.toLowerCase().includes(q) ||
-          (doc.mostRecentActor || '').toLowerCase().includes(q);
-        const eventMatches = doc.events.some(e => 
-          (e.changed_by || '').toLowerCase().includes(q) ||
-          (e.from_status || '').toLowerCase().includes(q) ||
-          (e.to_status || '').toLowerCase().includes(q) ||
-          (e.note || '').toLowerCase().includes(q)
-        );
-        return docMatches || eventMatches;
-      });
+    return result
+      .map(comp => {
+        const matchesComp = comp.companyName.toLowerCase().includes(q);
+        const filteredDocs = comp.documents.filter(doc => {
+          const matchesDoc = 
+            doc.docType.toLowerCase().includes(q) ||
+            doc.mostRecentActor.toLowerCase().includes(q) ||
+            (doc.latestEvent?.note || '').toLowerCase().includes(q) ||
+            doc.events.some(e => 
+              (e.from_status || '').toLowerCase().includes(q) ||
+              (e.to_status || '').toLowerCase().includes(q) ||
+              (e.note || '').toLowerCase().includes(q) ||
+              (e.changed_by || '').toLowerCase().includes(q)
+            );
+          return matchesComp || matchesDoc;
+        });
 
-      return companyMatches || matchingDocs.length > 0;
-    }).map(comp => {
-      if (comp.companyName.toLowerCase().includes(q)) return comp;
-      return {
-        ...comp,
-        documents: comp.documents.filter(doc => {
-          const docMatches = doc.docType.toLowerCase().includes(q) ||
-            (doc.mostRecentActor || '').toLowerCase().includes(q);
-          const eventMatches = doc.events.some(e => 
-            (e.changed_by || '').toLowerCase().includes(q) ||
-            (e.from_status || '').toLowerCase().includes(q) ||
-            (e.to_status || '').toLowerCase().includes(q) ||
-            (e.note || '').toLowerCase().includes(q)
-          );
-          return docMatches || eventMatches;
-        })
-      };
-    });
-  }, [history, contractsMap, searchAuditQuery]);
+        if (filteredDocs.length === 0) return null;
+
+        return {
+          ...comp,
+          documents: filteredDocs,
+          totalEvents: filteredDocs.reduce((sum, d) => sum + d.totalEvents, 0)
+        };
+      })
+      .filter(Boolean);
+  }, [contracts, history, contractsMap, searchAuditQuery]);
 
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-10 relative overflow-y-auto w-full">
@@ -445,7 +601,7 @@ export default function AnalyticsAudit({ onShowToast }) {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             {/* Total Contracts */}
             <div className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-glow/40 transition-all duration-300">
               <div className="flex items-center justify-between text-gray-400 mb-3">
@@ -472,7 +628,7 @@ export default function AnalyticsAudit({ onShowToast }) {
             {/* In Review */}
             <div className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-amber-500/40 transition-all duration-300">
               <div className="flex items-center justify-between text-gray-400 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider">Pending Review</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">In Review</span>
                 <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   <Clock size={18} />
                 </div>
@@ -488,29 +644,6 @@ export default function AnalyticsAudit({ onShowToast }) {
                 <div 
                   className="bg-amber-400 h-full rounded-full transition-all duration-500" 
                   style={{ width: `${getPercent(inReviewCount)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Approved */}
-            <div className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-blue-500/40 transition-all duration-300">
-              <div className="flex items-center justify-between text-gray-400 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider">Approved</span>
-                <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <CheckCircle2 size={18} />
-                </div>
-              </div>
-              <div className="text-3xl font-extrabold text-blue-400 tracking-tight">
-                {isLoading ? <span className="opacity-50 text-2xl">...</span> : approvalsCount}
-              </div>
-              <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
-                <span>Ready for Execution</span>
-                <span className="text-blue-400 font-medium">{getPercent(approvalsCount)}%</span>
-              </div>
-              <div className="w-full bg-white/10 h-1 rounded-full mt-2 overflow-hidden">
-                <div 
-                  className="bg-blue-400 h-full rounded-full transition-all duration-500" 
-                  style={{ width: `${getPercent(approvalsCount)}%` }}
                 />
               </div>
             </div>
@@ -534,6 +667,52 @@ export default function AnalyticsAudit({ onShowToast }) {
                 <div 
                   className="bg-purple-400 h-full rounded-full transition-all duration-500" 
                   style={{ width: `${getPercent(sentCount)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Executed */}
+            <div className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-cyan-500/40 transition-all duration-300">
+              <div className="flex items-center justify-between text-gray-400 mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider">Executed</span>
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <CheckCircle2 size={18} />
+                </div>
+              </div>
+              <div className="text-3xl font-extrabold text-cyan-400 tracking-tight">
+                {isLoading ? <span className="opacity-50 text-2xl">...</span> : executedCount}
+              </div>
+              <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
+                <span>Signed & Ready for Review</span>
+                <span className="text-cyan-400 font-medium">{getPercent(executedCount)}%</span>
+              </div>
+              <div className="w-full bg-white/10 h-1 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-cyan-400 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${getPercent(executedCount)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Completed */}
+            <div className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-emerald-500/40 transition-all duration-300">
+              <div className="flex items-center justify-between text-gray-400 mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider">Completed</span>
+                <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(52,211,153,0.2)]">
+                  <ShieldCheck size={18} />
+                </div>
+              </div>
+              <div className="text-3xl font-extrabold text-emerald-300 tracking-tight">
+                {isLoading ? <span className="opacity-50 text-2xl">...</span> : completedCount}
+              </div>
+              <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
+                <span>Finalized</span>
+                <span className="text-emerald-300 font-medium">{getPercent(completedCount)}%</span>
+              </div>
+              <div className="w-full bg-white/10 h-1 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-400 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${getPercent(completedCount)}%` }}
                 />
               </div>
             </div>
@@ -658,21 +837,16 @@ export default function AnalyticsAudit({ onShowToast }) {
 
                               {/* Center: Latest/Current Status Transition Badge + Lifecycle Events Indicator */}
                               <div className="flex items-center gap-3.5 flex-wrap flex-1 md:justify-center">
-                                {doc.events.length === 1 && (latestEvt.to_status?.toLowerCase() === 'in_review' || (!latestEvt.from_status || latestEvt.from_status?.toLowerCase() === 'draft')) ? (
+                                {doc.events.length === 1 || !latestEvt.from_status ? (
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    {renderStatusBadge('in_review')}
-                                    <span className="text-[11px] text-amber-400/90 font-medium">
-                                      Currently In Review ({formatDuration(Math.max(0, Date.now() - (latestEvt.timestamp || Date.now())), true)})
-                                    </span>
+                                    {renderStatusBadge(latestEvt.to_status || 'in_review')}
                                   </div>
-                                ) : latestEvt.from_status || latestEvt.to_status ? (
+                                ) : (
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    {renderStatusBadge(latestEvt.from_status?.toLowerCase() === 'draft' ? 'in_review' : latestEvt.from_status)}
+                                    {renderStatusBadge(latestEvt.from_status)}
                                     <ArrowRight size={13} className="text-gray-500 shrink-0" />
                                     {renderStatusBadge(latestEvt.to_status)}
                                   </div>
-                                ) : (
-                                  <span className="text-xs text-gray-400">No transitions recorded</span>
                                 )}
 
                                 {/* Indicator: e.g. "4 lifecycle events ▾" */}
@@ -685,16 +859,8 @@ export default function AnalyticsAudit({ onShowToast }) {
                                 </div>
                               </div>
 
-                              {/* Right: Most Recent Actor & Timestamp */}
+                              {/* Right: Most Recent Timestamp */}
                               <div className="flex items-center justify-between md:justify-end gap-5 shrink-0 flex-wrap">
-                                {/* Actor */}
-                                <div className="flex items-center gap-1.5 text-xs text-gray-300">
-                                  <User size={13} className="text-gray-500 shrink-0" />
-                                  <span className="font-mono text-[11px] text-gray-300">
-                                    {doc.mostRecentActor}
-                                  </span>
-                                </div>
-
                                 {/* Timestamp */}
                                 <div className="flex items-center gap-1.5 text-xs text-gray-400">
                                   <Calendar size={13} className="text-gray-500 shrink-0" />
@@ -716,49 +882,23 @@ export default function AnalyticsAudit({ onShowToast }) {
                                     <div className="space-y-6 relative">
                                       {doc.events.map((event, eIdx) => {
                                         const isLast = eIdx === doc.events.length - 1;
-                                        const fromTheme = getStatusTheme(event.from_status);
+                                        const fromTheme = event.from_status ? getStatusTheme(event.from_status) : null;
                                         const toTheme = getStatusTheme(event.to_status);
-                                        const nextEvent = !isLast ? doc.events[eIdx + 1] : null;
-                                        const nextTheme = nextEvent ? getStatusTheme(nextEvent.to_status) : null;
+                                        const prevEvent = eIdx > 0 ? doc.events[eIdx - 1] : null;
                                         
-                                        const isInitialCreation = (!event.from_status || event.from_status?.toLowerCase() === 'draft') && 
-                                                                  (event.to_status?.toLowerCase() === 'in_review');
-
-                                        // Elapsed duration for this state
-                                        const elapsedMs = isLast
-                                          ? Math.max(0, Date.now() - (event.timestamp || 0))
-                                          : Math.max(0, (nextEvent?.timestamp || event.timestamp || 0) - (event.timestamp || 0));
+                                        // Elapsed duration for the state that preceded this event
+                                        const elapsedMs = eIdx > 0
+                                          ? Math.max(0, (event.timestamp || 0) - (prevEvent?.timestamp || event.timestamp || 0))
+                                          : 0;
                                         
-                                        const durationStr = formatDuration(elapsedMs, isLast);
                                         const durationOnly = getDurationOnlyString(elapsedMs);
-                                        const isOngoingWaiting = isLast && isWaitingQueueState(event.to_status);
 
-                                        // Dynamic, accurate sentence for the state duration
+                                        // Accurate duration sentence: explains time spent in previous state
                                         let eventDescription = null;
-                                        if (isInitialCreation) {
-                                          if (isLast) {
-                                            eventDescription = (
-                                              <span>
-                                                Currently <span className="text-amber-400 font-medium">In Review</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> (Awaiting initial review & approval decision)
-                                              </span>
-                                            );
-                                          } else {
-                                            eventDescription = (
-                                              <span>
-                                                Remained in <span className="text-amber-400 font-medium">Review</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className="text-gray-300 font-medium">{nextTheme?.label || 'Next State'}</span>
-                                              </span>
-                                            );
-                                          }
-                                        } else if (isLast) {
+                                        if (eIdx > 0 && fromTheme && toTheme) {
                                           eventDescription = (
                                             <span>
-                                              Currently in <span className="text-gray-300 font-medium">{toTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span>
-                                            </span>
-                                          );
-                                        } else {
-                                          eventDescription = (
-                                            <span>
-                                              Remained in <span className="text-gray-300 font-medium">{toTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className="text-gray-300 font-medium">{nextTheme?.label || 'Next State'}</span>
+                                              Remained in <span className={`${fromTheme.text} font-medium`}>{fromTheme.label}</span> for <span className="text-glow/90 font-medium">{durationOnly}</span> before moving to <span className={`${toTheme.text} font-medium`}>{toTheme.label}</span>
                                             </span>
                                           );
                                         }
@@ -782,61 +922,37 @@ export default function AnalyticsAudit({ onShowToast }) {
                                             {/* Event Details Box */}
                                             <div className="flex-1 bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 rounded-xl p-3.5 sm:p-4 transition-all">
                                               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                                                {/* Transition Path & State Duration Metric Pill */}
+                                                {/* Transition Path & Description */}
                                                 <div className="flex flex-col gap-1.5 min-w-0">
                                                   <div className="flex items-center gap-2.5 flex-wrap">
                                                     <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                                                       Event #{eIdx + 1}:
                                                     </span>
 
-                                                    {/* Transition Badges */}
-                                                    {isInitialCreation && isLast ? (
+                                                    {/* Transition Badges: Event #1 is Document Generation (shows only In Review); Event #2+ shows From -> To */}
+                                                    {eIdx === 0 || !event.from_status ? (
                                                       <div className="flex items-center gap-2">
-                                                        {renderStatusBadge('in_review')}
-                                                      </div>
-                                                    ) : isInitialCreation && !isLast ? (
-                                                      <div className="flex items-center gap-2 flex-wrap">
-                                                        {renderStatusBadge('in_review')}
-                                                        <ArrowRight size={13} className="text-gray-500 shrink-0" />
-                                                        {renderStatusBadge(nextEvent?.to_status || 'approvals')}
+                                                        {renderStatusBadge(event.to_status || 'in_review')}
                                                       </div>
                                                     ) : (
                                                       <div className="flex items-center gap-2 flex-wrap">
-                                                        {renderStatusBadge(event.from_status?.toLowerCase() === 'draft' ? 'in_review' : event.from_status)}
+                                                        {renderStatusBadge(event.from_status)}
                                                         <ArrowRight size={13} className="text-gray-500 shrink-0" />
                                                         {renderStatusBadge(event.to_status)}
                                                       </div>
                                                     )}
+                                                  </div>
 
-                                                    {/* State Duration Metric Pill */}
-                                                    <div>
-                                                      <div 
-                                                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-medium border transition-all cursor-default select-none ${
-                                                          isOngoingWaiting 
-                                                            ? 'bg-glow/10 border-glow/30 text-glow shadow-[0_0_10px_rgba(0,243,255,0.15)]' 
-                                                            : 'bg-white/[0.04] border-white/10 text-gray-300 hover:border-white/20'
-                                                        }`}
-                                                      >
-                                                        <Clock size={11} className={isOngoingWaiting ? "text-glow animate-pulse" : "text-gray-400"} />
-                                                        <span>{durationStr}</span>
-                                                      </div>
+                                                  {/* Clear, Accurate Duration Explanation Text (only on transitions) */}
+                                                  {eventDescription && (
+                                                    <div className="text-[11px] text-gray-400 font-normal leading-relaxed pl-0.5">
+                                                      {eventDescription}
                                                     </div>
-                                                  </div>
-
-                                                  {/* Clear, Accurate Duration Explanation Text */}
-                                                  <div className="text-[11px] text-gray-400 font-normal leading-relaxed pl-0.5">
-                                                    {eventDescription}
-                                                  </div>
+                                                  )}
                                                 </div>
 
-                                                {/* Triggered By & Timestamp */}
+                                                {/* Timestamp */}
                                                 <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
-                                                  <div className="flex items-center gap-1.5">
-                                                    <User size={13} className="text-gray-500 shrink-0" />
-                                                    <span className="font-mono text-[11px] text-gray-300">
-                                                      {event.changed_by || 'system'}
-                                                    </span>
-                                                  </div>
                                                   <div className="flex items-center gap-1.5">
                                                     <Calendar size={13} className="text-gray-500 shrink-0" />
                                                     <span>{formatDateTime(event.rawDate || event.changed_at)}</span>

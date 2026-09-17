@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, GitPullRequest, BarChart3, ShieldCheck } from 'lucide-react';
+import { FileText, GitPullRequest, BarChart3, ShieldCheck, FileCheck } from 'lucide-react';
 
 export default function Sidebar({ currentView, setCurrentView }) {
   const navItems = [
@@ -20,6 +20,12 @@ export default function Sidebar({ currentView, setCurrentView }) {
       label: 'Approval Center',
       icon: GitPullRequest,
       badge: 'Review'
+    },
+    {
+      id: 'receiver',
+      label: 'Receiver Center',
+      icon: FileCheck,
+      badge: 'Signed'
     }
   ];
 

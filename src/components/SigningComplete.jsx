@@ -20,6 +20,16 @@ const STATUS_CONFIGS = {
     badge: 'Completed',
     badgeClass: 'bg-glow/10 text-glow border-glow/30',
   },
+  signing_complete_revision: {
+    type: 'success',
+    title: 'Changes signed',
+    message: "Thank you — your updated document has been signed and recorded. The other party will be notified automatically, and you'll receive a copy of the finalized document by email.",
+    icon: CheckCircle2,
+    iconColor: 'text-glow',
+    iconBg: 'bg-glow/10 border-glow/30 shadow-[0_0_20px_rgba(0,243,255,0.2)]',
+    badge: 'Completed',
+    badgeClass: 'bg-glow/10 text-glow border-glow/30',
+  },
   decline: {
     type: 'error',
     title: 'Signing declined',
@@ -73,33 +83,61 @@ const STATUS_CONFIGS = {
 };
 
 export default function SigningComplete() {
-  const { event, envelopeId } = useMemo(() => {
+  const { event, envelopeId, revision } = useMemo(() => {
     if (typeof window === 'undefined') {
-      return { event: 'signing_complete', envelopeId: null };
+      return { event: 'signing_complete', envelopeId: null, revision: null };
     }
-    const searchParams = new URLSearchParams(window.location.search);
-    
-    // Also check hash query params if present (e.g. #/signing-complete?event=...)
-    let eventParam = searchParams.get('event');
-    let envelopeParam = searchParams.get('envelopeId') || searchParams.get('envelope_id');
 
-    if (!eventParam && window.location.hash.includes('?')) {
-      const hashQuery = window.location.hash.split('?')[1];
-      const hashParams = new URLSearchParams(hashQuery);
-      eventParam = hashParams.get('event');
-      if (!envelopeParam) {
-        envelopeParam = hashParams.get('envelopeId') || hashParams.get('envelope_id');
-      }
-    }
+    // Helper to safely extract a parameter from standard query search, hash, and href
+    const getParam = (name) => {
+      // 1. Standard search params parsing (e.g. ?revision=2&event=signing_complete)
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const val = searchParams.get(name);
+        if (val != null && val !== '') return val;
+      } catch (e) {}
+
+      // 2. Hash query params parsing (e.g. #/signing-complete?revision=2&event=signing_complete)
+      try {
+        if (window.location.hash && window.location.hash.includes('?')) {
+          const hashQuery = window.location.hash.slice(window.location.hash.indexOf('?') + 1);
+          const hashParams = new URLSearchParams(hashQuery);
+          const val = hashParams.get(name);
+          if (val != null && val !== '') return val;
+        }
+      } catch (e) {}
+
+      // 3. Fallback regex extraction across the entire href (handles secondary '?' or multiple query blocks)
+      try {
+        const href = window.location.href;
+        const regex = new RegExp(`[?&]${name}=([^&#]*)`, 'i');
+        const match = href.match(regex);
+        if (match && match[1] != null && match[1] !== '') {
+          return decodeURIComponent(match[1]);
+        }
+      } catch (e) {}
+
+      return null;
+    };
+
+    const eventParam = getParam('event');
+    const envelopeParam = getParam('envelopeId') || getParam('envelope_id');
+    const revisionParam = getParam('revision');
 
     return {
       event: eventParam ? eventParam.toLowerCase().trim() : 'signing_complete',
-      envelopeId: envelopeParam ? envelopeParam.trim() : null
+      envelopeId: envelopeParam ? envelopeParam.trim() : null,
+      revision: revisionParam ? revisionParam.trim() : null
     };
   }, []);
 
   const config = useMemo(() => {
-    if (!event || event === 'signing_complete' || event === 'completed' || event === 'success') {
+    const isSuccess = !event || event === 'signing_complete' || event === 'completed' || event === 'success';
+    if (isSuccess) {
+      const revNum = parseInt(revision, 10);
+      if (!isNaN(revNum) && revNum >= 2) {
+        return STATUS_CONFIGS.signing_complete_revision;
+      }
       return STATUS_CONFIGS.signing_complete;
     }
     if (event === 'decline' || event === 'declined') {
@@ -119,11 +157,7 @@ export default function SigningComplete() {
     }
     // Unrecognized event fallback
     return STATUS_CONFIGS.exception;
-  }, [event]);
-
-  const handleClose = () => {
-    window.close();
-  };
+  }, [event, revision]);
 
   const IconComponent = config.icon;
 
@@ -163,17 +197,14 @@ export default function SigningComplete() {
           </h1>
 
           {/* Message */}
-          <p className="text-gray-300 text-sm sm:text-base leading-relaxed mb-8 max-w-md">
+          <p className="text-gray-300 text-sm sm:text-base leading-relaxed mb-4 max-w-md">
             {config.message}
           </p>
 
-          {/* Action Button */}
-          <button
-            onClick={handleClose}
-            className="w-full sm:w-auto min-w-[200px] px-8 py-3.5 rounded-xl bg-white text-black font-bold hover:bg-glow hover:text-black transition-all duration-300 shadow-lg hover:shadow-[0_0_25px_rgba(0,243,255,0.4)] active:scale-95 cursor-pointer"
-          >
-            Close this window
-          </button>
+          {/* Safe to close text */}
+          <p className="text-xs sm:text-sm text-gray-400 font-medium">
+            You can safely close this tab now.
+          </p>
 
           {/* Envelope ID (if present) */}
           {envelopeId && (

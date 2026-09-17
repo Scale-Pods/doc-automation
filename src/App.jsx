@@ -6,10 +6,11 @@ import IntakeForm from './components/IntakeForm';
 import BackgroundAnimation from './components/BackgroundAnimation';
 import Sidebar from './components/Sidebar';
 import PipelineApprovals from './components/PipelineApprovals';
+import ReceiverCenter from './components/ReceiverCenter';
 import AnalyticsAudit from './components/AnalyticsAudit';
 import SigningComplete from './components/SigningComplete';
 
-const VALID_VIEWS = ['analytics', 'generation', 'pipeline'];
+const VALID_VIEWS = ['analytics', 'generation', 'pipeline', 'receiver'];
 
 const isSigningCompleteRoute = () => {
   if (typeof window === 'undefined') return false;
@@ -25,6 +26,7 @@ const getInitialView = () => {
     if (rawHash === 'analytics' || rawHash === 'audit') return 'analytics';
     if (rawHash === 'generation' || rawHash === 'create') return 'generation';
     if (rawHash === 'pipeline' || rawHash === 'approvals' || rawHash === 'approval' || rawHash === 'review') return 'pipeline';
+    if (rawHash === 'receiver' || rawHash === 'signed' || rawHash === 'execution') return 'receiver';
 
     // 2. Fall back to localStorage
     const savedTab = localStorage.getItem('clm_active_tab');
@@ -124,6 +126,18 @@ function App() {
               transition={{ duration: 0.2 }}
             >
               <PipelineApprovals onShowToast={showToast} />
+            </motion.div>
+          )}
+
+          {currentView === 'receiver' && (
+            <motion.div
+              key="receiver"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ReceiverCenter onShowToast={showToast} />
             </motion.div>
           )}
 
