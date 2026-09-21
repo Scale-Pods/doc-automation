@@ -648,11 +648,11 @@ export default function AnalyticsAudit({ onShowToast }) {
     });
   }, [contracts, selectedMonthKey, currentMonthData.monthKey]);
 
-  // All executed & completed finalized documents in selected timeframe
+  // All completed finalized documents in selected timeframe (signed by both parties)
   const finalizedDocuments = useMemo(() => {
     return timeframeContracts.filter(c => {
       const s = (c.status || '').toLowerCase().trim();
-      return s === 'executed' || s === 'completed';
+      return s === 'completed';
     }).map(c => {
       const companyName = (c.company_name || c.client_name || c.client_company_name || 'Client Contract').trim();
       const docType = (c.doc_type || 'NDA').trim();
@@ -673,7 +673,7 @@ export default function AnalyticsAudit({ onShowToast }) {
   }, [timeframeContracts]);
 
   const activeInFlightCount = activeInFlightDocuments.length;
-  const completionRate = tfTotal > 0 ? Math.round(((tfExecuted + tfCompleted) / Math.max(1, tfTotal)) * 100) : 0;
+  const completionRate = tfTotal > 0 ? Math.round((tfCompleted / Math.max(1, tfTotal)) * 100) : 0;
 
   // Active Month details for the floating widget
   const activeMonthInfo = useMemo(() => {
@@ -1162,7 +1162,7 @@ export default function AnalyticsAudit({ onShowToast }) {
               </div>
             </motion.button>
 
-            {/* Hero Card 3: Execution & Finalization (Clickable Pop-up Trigger) */}
+            {/* Hero Card 3: Completed Documents (Clickable Pop-up Trigger) */}
             <motion.button
               type="button"
               whileHover={{ y: -2 }}
@@ -1173,25 +1173,25 @@ export default function AnalyticsAudit({ onShowToast }) {
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
                   <ShieldCheck size={14} className="text-emerald-400" />
-                  Executed & Completed
+                  Completed Documents
                 </span>
                 <span className="text-xs font-bold text-emerald-400">{completionRate}% Rate</span>
               </div>
 
               <div className="my-3.5">
                 <div className="text-3xl sm:text-4xl font-black text-white tracking-tight flex items-baseline gap-2">
-                  <span>{isLoading ? '...' : tfExecuted + tfCompleted}</span>
+                  <span>{isLoading ? '...' : tfCompleted}</span>
                   <span className="text-xs font-semibold text-emerald-300/80 uppercase tracking-wider">
-                    Finalized
+                    Completed
                   </span>
                 </div>
                 <div className="text-xs text-gray-400 mt-1">
-                  {tfExecuted} Executed • {tfCompleted} Completed
+                  Signed by both parties & finalized ({tfCompleted} total)
                 </div>
               </div>
 
               <div className="pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-emerald-400 font-semibold group-hover:text-emerald-300">
-                <span>Click to view finalized documents pop-up</span>
+                <span>Click to view completed documents pop-up</span>
                 <span className="group-hover:translate-x-0.5 transition-transform">→</span>
               </div>
             </motion.button>
@@ -2608,7 +2608,7 @@ export default function AnalyticsAudit({ onShowToast }) {
           document.body
         )}
 
-        {/* 3. Executed & Completed Finalized Pop-up Modal */}
+        {/* 3. Completed Finalized Pop-up Modal */}
         {showFinalizedModal && createPortal(
           <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
             <motion.div
@@ -2635,14 +2635,14 @@ export default function AnalyticsAudit({ onShowToast }) {
                   <div>
                     <div className="flex items-center gap-2.5">
                       <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                        Executed & Completed Documents
+                        Completed Documents
                       </h2>
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        {finalizedDocuments.length} Finalized
+                        {finalizedDocuments.length} Completed
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Contracts that have collected all signatures and completed verification.
+                      Contracts signed by both parties that have completed verification and archiving.
                     </p>
                   </div>
                 </div>
@@ -2668,29 +2668,29 @@ export default function AnalyticsAudit({ onShowToast }) {
                       : 'bg-slate-800 text-gray-400 hover:text-white'
                   }`}
                 >
-                  All Finalized ({finalizedDocuments.length})
+                  All Completed ({finalizedDocuments.length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFinalizedModalFilter('executed')}
+                  onClick={() => setFinalizedModalFilter('nda')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                    finalizedModalFilter === 'executed'
+                    finalizedModalFilter === 'nda'
                       ? 'bg-emerald-500 text-black font-bold shadow-md'
                       : 'bg-slate-800 text-gray-400 hover:text-white'
                   }`}
                 >
-                  Executed ({finalizedDocuments.filter(d => d.normalizedStatus === 'executed').length})
+                  NDA ({finalizedDocuments.filter(d => (d.docType || '').toUpperCase() === 'NDA').length})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFinalizedModalFilter('completed')}
+                  onClick={() => setFinalizedModalFilter('sla')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                    finalizedModalFilter === 'completed'
+                    finalizedModalFilter === 'sla'
                       ? 'bg-emerald-500 text-black font-bold shadow-md'
                       : 'bg-slate-800 text-gray-400 hover:text-white'
                   }`}
                 >
-                  Completed ({finalizedDocuments.filter(d => d.normalizedStatus === 'completed').length})
+                  SLA ({finalizedDocuments.filter(d => (d.docType || '').toUpperCase() === 'SLA').length})
                 </button>
               </div>
 
@@ -2698,8 +2698,8 @@ export default function AnalyticsAudit({ onShowToast }) {
               <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 {(() => {
                   const filtered = finalizedDocuments.filter(doc => {
-                    if (finalizedModalFilter === 'executed') return doc.normalizedStatus === 'executed';
-                    if (finalizedModalFilter === 'completed') return doc.normalizedStatus === 'completed';
+                    if (finalizedModalFilter === 'nda') return (doc.docType || '').toUpperCase() === 'NDA';
+                    if (finalizedModalFilter === 'sla') return (doc.docType || '').toUpperCase() === 'SLA';
                     return true;
                   });
 
@@ -2709,9 +2709,9 @@ export default function AnalyticsAudit({ onShowToast }) {
                         <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3">
                           <ShieldCheck size={24} />
                         </div>
-                        <h3 className="text-base font-bold text-white">No finalized documents in this category</h3>
+                        <h3 className="text-base font-bold text-white">No completed documents</h3>
                         <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
-                          No executed or completed documents in this selection.
+                          No contracts in this selection have completed all signatures from both parties yet.
                         </p>
                       </div>
                     );
@@ -2843,7 +2843,7 @@ export default function AnalyticsAudit({ onShowToast }) {
               {/* Modal Footer */}
               <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between gap-4">
                 <span className="text-xs text-gray-400">
-                  Showing {finalizedDocuments.length} finalized {finalizedDocuments.length === 1 ? 'document' : 'documents'}
+                  Showing {finalizedDocuments.length} completed {finalizedDocuments.length === 1 ? 'document' : 'documents'}
                 </span>
 
                 <button
