@@ -2068,9 +2068,10 @@ export default function AnalyticsAudit({ onShowToast }) {
           )}
         </div>
 
-        {/* 1. Documents Sent / Dispatched This Month Pop-up Modal */}
+        {/* 1. Documents Sent This Month Pop-up Modal */}
         {showSentMonthModal && createPortal(
           <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2079,12 +2080,13 @@ export default function AnalyticsAudit({ onShowToast }) {
               className="fixed inset-0 bg-black/85 backdrop-blur-md"
             />
 
+            {/* Modal Window */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
+              className="relative w-full max-w-4xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
             >
               {/* Modal Header */}
               <div className="p-5 sm:p-6 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-900/60">
@@ -2165,7 +2167,7 @@ export default function AnalyticsAudit({ onShowToast }) {
                 </button>
               </div>
 
-              {/* Modal Content / Document List */}
+              {/* Modal Content / Document List Grouped by Company */}
               <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 {(() => {
                   const filtered = sentThisMonthDocuments.filter(doc => {
@@ -2189,74 +2191,127 @@ export default function AnalyticsAudit({ onShowToast }) {
                     );
                   }
 
-                  return filtered.map((doc, idx) => {
-                    const action = getActionNeeded(doc.normalizedStatus);
+                  // Group contracts by company
+                  const groups = {};
+                  filtered.forEach(doc => {
+                    const companyKey = (doc.companyName || doc.company_name || doc.client_name || doc.client_company_name || 'Client Contract').trim();
+                    if (!groups[companyKey]) {
+                      groups[companyKey] = {
+                        companyName: companyKey,
+                        clientEmail: doc.client_email || '',
+                        signatoryName: doc.signatory_name || '',
+                        documents: []
+                      };
+                    }
+                    if (!groups[companyKey].clientEmail && doc.client_email) {
+                      groups[companyKey].clientEmail = doc.client_email;
+                    }
+                    if (!groups[companyKey].signatoryName && doc.signatory_name) {
+                      groups[companyKey].signatoryName = doc.signatory_name;
+                    }
+                    groups[companyKey].documents.push(doc);
+                  });
+                  const companyGroups = Object.values(groups);
+
+                  return companyGroups.map((group, gIdx) => {
+                    const docCount = group.documents.length;
 
                     return (
                       <div
-                        key={doc.id || idx}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5 hover:border-slate-700 transition-all shadow-md flex flex-col gap-3"
+                        key={group.companyName + gIdx}
+                        className="rounded-2xl border border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-all shadow-md overflow-hidden flex flex-col md:flex-row items-stretch"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <Building2 size={16} className="text-glow shrink-0" />
-                            <span className="font-extrabold text-white text-sm sm:text-base">
-                              {doc.companyName}
-                            </span>
-                            {getDocTypeBadge(doc.docType)}
-                          </div>
-
-                          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                            {renderStatusBadge(doc.normalizedStatus)}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDocPreview(doc)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                                (doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url)
-                                  ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
-                                  : 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30'
-                              }`}
-                              title={(doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url) ? 'View Signed Document' : 'View Generated Document'}
-                            >
-                              <Eye size={13} />
-                              <span>
-                                {(doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url)
-                                  ? 'View Signed'
-                                  : 'View Doc'}
-                              </span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className={`rounded-xl border p-3 ${action.color} flex items-start gap-2.5`}>
-                          <Zap size={16} className="shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-bold text-xs uppercase tracking-wide">
-                              {action.title}
+                        {/* Left Column: Company Info */}
+                        <div className="w-full md:w-64 lg:w-72 shrink-0 p-4 sm:p-5 flex flex-col justify-center items-start bg-white/[0.02] border-b md:border-b-0 md:border-r border-slate-800/80">
+                          <div className="flex items-center gap-3 mb-2 w-full">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-blue-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.15)]">
+                              <Building2 size={20} />
                             </div>
-                            <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
-                              {action.description}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight leading-snug break-words">
+                                {group.companyName}
+                              </h3>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-300 uppercase tracking-wider">
+                                  <Layers size={11} />
+                                  <span>{docCount} {docCount === 1 ? 'Document' : 'Documents'}</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
+
+                          {(group.signatoryName || group.clientEmail) && (
+                            <div className="mt-1.5 text-xs text-gray-400 space-y-0.5 pl-0.5">
+                              {group.signatoryName && (
+                                <div className="text-gray-300 font-medium truncate text-[11.5px]">
+                                  {group.signatoryName}
+                                </div>
+                              )}
+                              {group.clientEmail && (
+                                <div className="text-gray-500 font-mono text-[10.5px] truncate flex items-center gap-1">
+                                  <User size={10} className="text-gray-500 shrink-0" />
+                                  <span className="truncate">{group.clientEmail}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 flex-wrap gap-2">
-                          <div className="flex items-center gap-3">
-                            {doc.client_email && (
-                              <span className="flex items-center gap-1 text-gray-300">
-                                <User size={12} className="text-gray-500" />
-                                {doc.client_email}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1 text-gray-400">
-                              <Calendar size={12} className="text-gray-500" />
-                              {formatDateTime(doc.createdAt)}
-                            </span>
-                          </div>
+                        {/* Right Section: Associated Documents Stack */}
+                        <div className="flex-1 flex flex-col justify-center divide-y divide-slate-800/60">
+                          {group.documents.map((doc, dIdx) => {
+                            const action = getActionNeeded(doc.normalizedStatus);
+                            const isSigned = doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || Boolean(doc.signed_doc_url);
 
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
-                          </span>
+                            return (
+                              <div
+                                key={doc.id || dIdx}
+                                className="p-4 sm:p-5 flex flex-col gap-3 hover:bg-white/[0.015] transition-colors"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    {getDocTypeBadge(doc.docType)}
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                      <Calendar size={12} className="text-gray-500 shrink-0" />
+                                      <span>{formatDateTime(doc.createdAt)}</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 font-mono">
+                                      ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                                    {renderStatusBadge(doc.normalizedStatus)}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDocPreview(doc)}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                                        isSigned
+                                          ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
+                                          : 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30'
+                                      }`}
+                                      title={isSigned ? 'View Signed Document' : 'View Generated Document'}
+                                    >
+                                      <Eye size={13} />
+                                      <span>{isSigned ? 'View Signed' : 'View Doc'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className={`rounded-xl border p-2.5 sm:p-3 ${action.color} flex items-start gap-2.5`}>
+                                  <Zap size={15} className="shrink-0 mt-0.5" />
+                                  <div>
+                                    <div className="font-bold text-xs uppercase tracking-wide">
+                                      {action.title}
+                                    </div>
+                                    <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                                      {action.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -2301,7 +2356,7 @@ export default function AnalyticsAudit({ onShowToast }) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
+              className="relative w-full max-w-4xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
             >
               {/* Modal Header */}
               <div className="p-5 sm:p-6 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-900/60">
@@ -2382,7 +2437,7 @@ export default function AnalyticsAudit({ onShowToast }) {
                 </button>
               </div>
 
-              {/* Modal Content / Document List */}
+              {/* Modal Content / Document List Grouped by Company */}
               <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 {(() => {
                   const filtered = activeInFlightDocuments.filter(doc => {
@@ -2406,77 +2461,127 @@ export default function AnalyticsAudit({ onShowToast }) {
                     );
                   }
 
-                  return filtered.map((doc, idx) => {
-                    const action = getActionNeeded(doc.normalizedStatus);
+                  // Group contracts by company
+                  const groups = {};
+                  filtered.forEach(doc => {
+                    const companyKey = (doc.companyName || doc.company_name || doc.client_name || doc.client_company_name || 'Client Contract').trim();
+                    if (!groups[companyKey]) {
+                      groups[companyKey] = {
+                        companyName: companyKey,
+                        clientEmail: doc.client_email || '',
+                        signatoryName: doc.signatory_name || '',
+                        documents: []
+                      };
+                    }
+                    if (!groups[companyKey].clientEmail && doc.client_email) {
+                      groups[companyKey].clientEmail = doc.client_email;
+                    }
+                    if (!groups[companyKey].signatoryName && doc.signatory_name) {
+                      groups[companyKey].signatoryName = doc.signatory_name;
+                    }
+                    groups[companyKey].documents.push(doc);
+                  });
+                  const companyGroups = Object.values(groups);
+
+                  return companyGroups.map((group, gIdx) => {
+                    const docCount = group.documents.length;
 
                     return (
                       <div
-                        key={doc.id || idx}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5 hover:border-slate-700 transition-all shadow-md flex flex-col gap-3"
+                        key={group.companyName + gIdx}
+                        className="rounded-2xl border border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-all shadow-md overflow-hidden flex flex-col md:flex-row items-stretch"
                       >
-                        {/* Top Row: Company Name & Status Pill */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <Building2 size={16} className="text-glow shrink-0" />
-                            <span className="font-extrabold text-white text-sm sm:text-base">
-                              {doc.companyName}
-                            </span>
-                            {getDocTypeBadge(doc.docType)}
-                          </div>
-
-                          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                            {renderStatusBadge(doc.normalizedStatus)}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDocPreview(doc)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                                (doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url)
-                                  ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
-                                  : 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30'
-                              }`}
-                              title={(doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url) ? 'View Signed Document' : 'View Generated Document'}
-                            >
-                              <Eye size={13} />
-                              <span>
-                                {(doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || doc.signed_doc_url)
-                                  ? 'View Signed'
-                                  : 'View Doc'}
-                              </span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Action Needed Callout Box */}
-                        <div className={`rounded-xl border p-3 ${action.color} flex items-start gap-2.5`}>
-                          <Zap size={16} className="shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-bold text-xs uppercase tracking-wide">
-                              {action.title}
+                        {/* Left Column: Company Info */}
+                        <div className="w-full md:w-64 lg:w-72 shrink-0 p-4 sm:p-5 flex flex-col justify-center items-start bg-white/[0.02] border-b md:border-b-0 md:border-r border-slate-800/80">
+                          <div className="flex items-center gap-3 mb-2 w-full">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.15)]">
+                              <Building2 size={20} />
                             </div>
-                            <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
-                              {action.description}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight leading-snug break-words">
+                                {group.companyName}
+                              </h3>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-300 uppercase tracking-wider">
+                                  <Layers size={11} />
+                                  <span>{docCount} {docCount === 1 ? 'Document' : 'Documents'}</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
+
+                          {(group.signatoryName || group.clientEmail) && (
+                            <div className="mt-1.5 text-xs text-gray-400 space-y-0.5 pl-0.5">
+                              {group.signatoryName && (
+                                <div className="text-gray-300 font-medium truncate text-[11.5px]">
+                                  {group.signatoryName}
+                                </div>
+                              )}
+                              {group.clientEmail && (
+                                <div className="text-gray-500 font-mono text-[10.5px] truncate flex items-center gap-1">
+                                  <User size={10} className="text-gray-500 shrink-0" />
+                                  <span className="truncate">{group.clientEmail}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        {/* Metadata Bottom Row */}
-                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 flex-wrap gap-2">
-                          <div className="flex items-center gap-3">
-                            {doc.client_email && (
-                              <span className="flex items-center gap-1 text-gray-300">
-                                <User size={12} className="text-gray-500" />
-                                {doc.client_email}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1 text-gray-400">
-                              <Calendar size={12} className="text-gray-500" />
-                              {formatDateTime(doc.createdAt)}
-                            </span>
-                          </div>
+                        {/* Right Section: Associated Documents Stack */}
+                        <div className="flex-1 flex flex-col justify-center divide-y divide-slate-800/60">
+                          {group.documents.map((doc, dIdx) => {
+                            const action = getActionNeeded(doc.normalizedStatus);
+                            const isSigned = doc.normalizedStatus === 'executed' || doc.normalizedStatus === 'completed' || Boolean(doc.signed_doc_url);
 
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
-                          </span>
+                            return (
+                              <div
+                                key={doc.id || dIdx}
+                                className="p-4 sm:p-5 flex flex-col gap-3 hover:bg-white/[0.015] transition-colors"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    {getDocTypeBadge(doc.docType)}
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                      <Calendar size={12} className="text-gray-500 shrink-0" />
+                                      <span>{formatDateTime(doc.createdAt)}</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 font-mono">
+                                      ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                                    {renderStatusBadge(doc.normalizedStatus)}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDocPreview(doc)}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                                        isSigned
+                                          ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
+                                          : 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30'
+                                      }`}
+                                      title={isSigned ? 'View Signed Document' : 'View Generated Document'}
+                                    >
+                                      <Eye size={13} />
+                                      <span>{isSigned ? 'View Signed' : 'View Doc'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className={`rounded-xl border p-2.5 sm:p-3 ${action.color} flex items-start gap-2.5`}>
+                                  <Zap size={15} className="shrink-0 mt-0.5" />
+                                  <div>
+                                    <div className="font-bold text-xs uppercase tracking-wide">
+                                      {action.title}
+                                    </div>
+                                    <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                                      {action.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -2519,7 +2624,7 @@ export default function AnalyticsAudit({ onShowToast }) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
+              className="relative w-full max-w-4xl rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b0f19] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[85vh]"
             >
               {/* Modal Header */}
               <div className="p-5 sm:p-6 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-900/60">
@@ -2589,7 +2694,7 @@ export default function AnalyticsAudit({ onShowToast }) {
                 </button>
               </div>
 
-              {/* Modal Content / Document List */}
+              {/* Modal Content / Document List Grouped by Company */}
               <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 {(() => {
                   const filtered = finalizedDocuments.filter(doc => {
@@ -2612,66 +2717,122 @@ export default function AnalyticsAudit({ onShowToast }) {
                     );
                   }
 
-                  return filtered.map((doc, idx) => {
-                    const action = getActionNeeded(doc.normalizedStatus);
+                  // Group contracts by company
+                  const groups = {};
+                  filtered.forEach(doc => {
+                    const companyKey = (doc.companyName || doc.company_name || doc.client_name || doc.client_company_name || 'Client Contract').trim();
+                    if (!groups[companyKey]) {
+                      groups[companyKey] = {
+                        companyName: companyKey,
+                        clientEmail: doc.client_email || '',
+                        signatoryName: doc.signatory_name || '',
+                        documents: []
+                      };
+                    }
+                    if (!groups[companyKey].clientEmail && doc.client_email) {
+                      groups[companyKey].clientEmail = doc.client_email;
+                    }
+                    if (!groups[companyKey].signatoryName && doc.signatory_name) {
+                      groups[companyKey].signatoryName = doc.signatory_name;
+                    }
+                    groups[companyKey].documents.push(doc);
+                  });
+                  const companyGroups = Object.values(groups);
+
+                  return companyGroups.map((group, gIdx) => {
+                    const docCount = group.documents.length;
 
                     return (
                       <div
-                        key={doc.id || idx}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5 hover:border-slate-700 transition-all shadow-md flex flex-col gap-3"
+                        key={group.companyName + gIdx}
+                        className="rounded-2xl border border-slate-800 bg-slate-900/80 hover:border-slate-700 transition-all shadow-md overflow-hidden flex flex-col md:flex-row items-stretch"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <Building2 size={16} className="text-glow shrink-0" />
-                            <span className="font-extrabold text-white text-sm sm:text-base">
-                              {doc.companyName}
-                            </span>
-                            {getDocTypeBadge(doc.docType)}
-                          </div>
-
-                          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                            {renderStatusBadge(doc.normalizedStatus)}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDocPreview(doc)}
-                              className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30"
-                              title="View Signed Document"
-                            >
-                              <Eye size={13} />
-                              <span>View Signed</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className={`rounded-xl border p-3 ${action.color} flex items-start gap-2.5`}>
-                          <Zap size={16} className="shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-bold text-xs uppercase tracking-wide">
-                              {action.title}
+                        {/* Left Column: Company Info */}
+                        <div className="w-full md:w-64 lg:w-72 shrink-0 p-4 sm:p-5 flex flex-col justify-center items-start bg-white/[0.02] border-b md:border-b-0 md:border-r border-slate-800/80">
+                          <div className="flex items-center gap-3 mb-2 w-full">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-600/20 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.15)]">
+                              <Building2 size={20} />
                             </div>
-                            <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
-                              {action.description}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight leading-snug break-words">
+                                {group.companyName}
+                              </h3>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-300 uppercase tracking-wider">
+                                  <Layers size={11} />
+                                  <span>{docCount} {docCount === 1 ? 'Document' : 'Documents'}</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
+
+                          {(group.signatoryName || group.clientEmail) && (
+                            <div className="mt-1.5 text-xs text-gray-400 space-y-0.5 pl-0.5">
+                              {group.signatoryName && (
+                                <div className="text-gray-300 font-medium truncate text-[11.5px]">
+                                  {group.signatoryName}
+                                </div>
+                              )}
+                              {group.clientEmail && (
+                                <div className="text-gray-500 font-mono text-[10.5px] truncate flex items-center gap-1">
+                                  <User size={10} className="text-gray-500 shrink-0" />
+                                  <span className="truncate">{group.clientEmail}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1 flex-wrap gap-2">
-                          <div className="flex items-center gap-3">
-                            {doc.client_email && (
-                              <span className="flex items-center gap-1 text-gray-300">
-                                <User size={12} className="text-gray-500" />
-                                {doc.client_email}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1 text-gray-400">
-                              <Calendar size={12} className="text-gray-500" />
-                              {formatDateTime(doc.createdAt)}
-                            </span>
-                          </div>
+                        {/* Right Section: Associated Documents Stack */}
+                        <div className="flex-1 flex flex-col justify-center divide-y divide-slate-800/60">
+                          {group.documents.map((doc, dIdx) => {
+                            const action = getActionNeeded(doc.normalizedStatus);
 
-                          <span className="text-[10px] text-gray-500 font-mono">
-                            ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
-                          </span>
+                            return (
+                              <div
+                                key={doc.id || dIdx}
+                                className="p-4 sm:p-5 flex flex-col gap-3 hover:bg-white/[0.015] transition-colors"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    {getDocTypeBadge(doc.docType)}
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                      <Calendar size={12} className="text-gray-500 shrink-0" />
+                                      <span>{formatDateTime(doc.createdAt)}</span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 font-mono">
+                                      ID: {doc.id ? String(doc.id).slice(0, 8) : 'N/A'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                                    {renderStatusBadge(doc.normalizedStatus)}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDocPreview(doc)}
+                                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30"
+                                      title="View Signed Document"
+                                    >
+                                      <Eye size={13} />
+                                      <span>View Signed</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className={`rounded-xl border p-2.5 sm:p-3 ${action.color} flex items-start gap-2.5`}>
+                                  <Zap size={15} className="shrink-0 mt-0.5" />
+                                  <div>
+                                    <div className="font-bold text-xs uppercase tracking-wide">
+                                      {action.title}
+                                    </div>
+                                    <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                                      {action.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
