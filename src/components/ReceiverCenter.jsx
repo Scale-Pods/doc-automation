@@ -22,7 +22,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Send,
-  FileCheck
+  FileCheck,
+  Mail
 } from 'lucide-react';
 import {
   fetchContracts
@@ -799,13 +800,14 @@ export default function ReceiverCenter({ onShowToast }) {
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 {getDocTypeBadge(confirmSingleModal.contract.doc_type)}
-                <span className="text-xs text-gray-400 font-medium">
-                  {confirmSingleModal.contract.signatory_name || confirmSingleModal.contract.client_email || ''}
+                <span className="text-xs text-gray-300 font-mono flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
+                  <Mail size={12} className="text-emerald-400" />
+                  <span>info@scalepods.co</span>
                 </span>
               </div>
 
               <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm leading-relaxed">
-                The {confirmSingleModal.contract.doc_type || 'document'} is signed and confirmed and will be sent to the internal team.
+                This document has been signed by the client. Click <strong className="text-white font-semibold">Confirm & Send</strong> to forward it to the internal team.
               </div>
 
               {/* Action Buttons */}
@@ -880,13 +882,14 @@ export default function ReceiverCenter({ onShowToast }) {
                 <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm">
                   NDA + SLA
                 </span>
-                <span className="text-xs text-gray-400 font-medium">
-                  {confirmBothModal.group.signatoryName || confirmBothModal.group.clientEmail || ''}
+                <span className="text-xs text-gray-300 font-mono flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
+                  <Mail size={12} className="text-emerald-400" />
+                  <span>info@scalepods.co</span>
                 </span>
               </div>
 
               <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm leading-relaxed">
-                Both documents are signed and confirmed and will be sent to the internal team.
+                Both documents have been signed by the client. Click <strong className="text-white font-semibold">Confirm & Send</strong> to forward them to the internal team.
               </div>
 
               {/* Action Buttons */}
