@@ -37,6 +37,17 @@ export default function ReceiverCenter({ onShowToast }) {
   const [actionLoading, setActionLoading] = useState({}); // { [contractId]: 'complete' | 'request_changes' }
   const [batchLoading, setBatchLoading] = useState({}); // { [companyName]: boolean }
   const [previewModal, setPreviewModal] = useState({ isOpen: false, url: '', title: '' });
+  const [confirmSingleModal, setConfirmSingleModal] = useState({
+    isOpen: false,
+    contract: null,
+    isSubmitting: false
+  });
+  const [confirmBothModal, setConfirmBothModal] = useState({
+    isOpen: false,
+    group: null,
+    contractIds: [],
+    isSubmitting: false
+  });
   const [changeModal, setChangeModal] = useState({
     isOpen: false,
     contract: null,
@@ -77,12 +88,30 @@ export default function ReceiverCenter({ onShowToast }) {
     });
   }, [contracts]);
 
-  // Handle reviewer actions (e.g. Confirm & Complete)
-  const handleAction = async (contract, actionType) => {
-    const contractId = contract.id;
-    if (!contractId) return;
+  // Handle single contract confirmation modal handlers
+  const openConfirmSingleModal = (contract) => {
+    setConfirmSingleModal({
+      isOpen: true,
+      contract,
+      isSubmitting: false
+    });
+  };
 
-    setActionLoading(prev => ({ ...prev, [contractId]: actionType }));
+  const closeConfirmSingleModal = () => {
+    setConfirmSingleModal({
+      isOpen: false,
+      contract: null,
+      isSubmitting: false
+    });
+  };
+
+  const handleExecuteSingleConfirm = async () => {
+    const contract = confirmSingleModal.contract;
+    if (!contract || !contract.id) return;
+    const contractId = contract.id;
+
+    setConfirmSingleModal(prev => ({ ...prev, isSubmitting: true }));
+    setActionLoading(prev => ({ ...prev, [contractId]: 'complete' }));
 
     try {
       const response = await fetch('https://n8n.srv1711190.hstgr.cloud/webhook/confirm-complete', {
@@ -95,16 +124,19 @@ export default function ReceiverCenter({ onShowToast }) {
         throw new Error(`Webhook error (${response.status}): ${response.statusText}`);
       }
 
-      onShowToast?.('Contract marked complete', 'success');
+      const docType = contract.doc_type || 'Document';
+      onShowToast?.(`${docType} confirmed and sent to internal team.`, 'success');
 
       // Optimistic status update to completed
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'completed' } : c));
+      closeConfirmSingleModal();
 
       // Reload live contracts from Supabase to keep state in sync
       await loadContracts();
     } catch (error) {
       console.error('Error confirming and completing contract:', error);
       onShowToast?.('Something went wrong — please try again.', 'error');
+      setConfirmSingleModal(prev => ({ ...prev, isSubmitting: false }));
     } finally {
       setActionLoading(prev => {
         const next = { ...prev };
@@ -114,12 +146,9 @@ export default function ReceiverCenter({ onShowToast }) {
     }
   };
 
-  // Batch action handler: Confirm & Complete Both
-  const handleConfirmBothAndComplete = async (group) => {
-    const companyKey = group.companyName;
+  // Handle batch confirmation modal handlers
+  const openConfirmBothModal = (group) => {
     const contractsToComplete = (group.contracts || []).filter(c => (c.status || '').toLowerCase() === 'executed');
-    if (!contractsToComplete.length) return;
-
     const ndaContract = group.contracts.find(c => (c.doc_type || '').toUpperCase().includes('NDA'));
     const slaContract = group.contracts.find(c => (c.doc_type || '').toUpperCase().includes('SLA'));
 
@@ -130,8 +159,29 @@ export default function ReceiverCenter({ onShowToast }) {
       contractIds = contractsToComplete.map(c => c.id).filter(Boolean);
     }
 
-    if (!contractIds.length) return;
+    setConfirmBothModal({
+      isOpen: true,
+      group,
+      contractIds,
+      isSubmitting: false
+    });
+  };
 
+  const closeConfirmBothModal = () => {
+    setConfirmBothModal({
+      isOpen: false,
+      group: null,
+      contractIds: [],
+      isSubmitting: false
+    });
+  };
+
+  const handleExecuteBothConfirm = async () => {
+    const { group, contractIds } = confirmBothModal;
+    if (!group || !contractIds || !contractIds.length) return;
+    const companyKey = group.companyName;
+
+    setConfirmBothModal(prev => ({ ...prev, isSubmitting: true }));
     setBatchLoading(prev => ({ ...prev, [companyKey]: true }));
 
     const payload = {
@@ -151,18 +201,20 @@ export default function ReceiverCenter({ onShowToast }) {
         throw new Error(`Webhook error (${response.status}): ${response.statusText}`);
       }
 
-      onShowToast?.('Both documents marked complete', 'success');
+      onShowToast?.(`Both documents for ${group.companyName} confirmed and sent to internal team.`, 'success');
 
       // Optimistically update statuses of both contracts in this group to 'completed'
       setContracts(prev =>
         prev.map(c => (contractIds.includes(c.id) ? { ...c, status: 'completed' } : c))
       );
+      closeConfirmBothModal();
 
       // Reload live contracts from Supabase
       await loadContracts();
     } catch (error) {
       console.error('Error completing both contracts:', error);
       onShowToast?.('Something went wrong — please try again.', 'error');
+      setConfirmBothModal(prev => ({ ...prev, isSubmitting: false }));
     } finally {
       setBatchLoading(prev => {
         const next = { ...prev };
@@ -554,7 +606,7 @@ export default function ReceiverCenter({ onShowToast }) {
                           {/* "Confirm & Complete Both" Action Button */}
                           {hasBothExecuted && (
                             <button
-                              onClick={() => handleConfirmBothAndComplete(group)}
+                              onClick={() => openConfirmBothModal(group)}
                               disabled={isThisBatchLoading || group.contracts.some(c => Boolean(actionLoading[c.id]))}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500/25 via-teal-500/25 to-emerald-500/25 hover:from-emerald-500 hover:to-teal-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_12px_rgba(16,185,129,0.25)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] disabled:opacity-50 cursor-pointer"
                               title="Confirm and complete both executed documents"
@@ -606,16 +658,20 @@ export default function ReceiverCenter({ onShowToast }) {
                       return (
                         <div
                           key={contract.id || cIdx}
-                          className="p-4 sm:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors"
+                          className="p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors"
                         >
-                          {/* Sub-row Left: Doc Type Badge, Date, and Change Request Callout */}
-                          <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          {/* Sub-row Left: Doc Type Badge, Date, Status Badge and Change Request Callout */}
+                          <div className="flex flex-col gap-2 min-w-0">
                             <div className="flex items-center gap-3 flex-wrap">
                               {getDocTypeBadge(docType)}
 
-                              <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium whitespace-nowrap">
                                 <Calendar size={13} className="text-gray-500 shrink-0" />
                                 <span>{formatDate(contract.created_at)}</span>
+                              </div>
+
+                              <div className="shrink-0">
+                                {getStatusBadge(contract.status)}
                               </div>
                             </div>
 
@@ -631,80 +687,71 @@ export default function ReceiverCenter({ onShowToast }) {
                             )}
                           </div>
 
-                          {/* Sub-row Right: Status Badge, Preview Button & Actions */}
-                          <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 flex-wrap">
-                            {/* Status Badge */}
-                            <div>
-                              {getStatusBadge(contract.status)}
-                            </div>
-
+                          {/* Sub-row Right: Preview Button & Actions */}
+                          <div className="flex items-center gap-2.5 flex-wrap justify-start xl:justify-end shrink-0">
                             {/* View Document Preview (Signed PDF) */}
-                            <div>
-                              {signedDocUrl ? (
-                                <button
-                                  onClick={() => openPreview(signedDocUrl, `${group.companyName} - ${docType} (Signed)`)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer"
-                                >
-                                  <Eye size={13} />
-                                  <span>View Doc</span>
-                                </button>
-                              ) : (
-                                <span className="text-xs text-gray-500 italic">No Doc URL</span>
-                              )}
-                            </div>
+                            {signedDocUrl ? (
+                              <button
+                                onClick={() => openPreview(signedDocUrl, `${group.companyName} - ${docType} (Signed)`)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                              >
+                                <Eye size={13} />
+                                <span>View Doc</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-500 italic">No Doc URL</span>
+                            )}
 
                             {/* Action Buttons */}
-                            <div className="min-w-[170px] flex justify-end">
-                              {isExecuted ? (
-                                <div className="flex items-center gap-2">
-                                  {/* Confirm & Complete Button */}
-                                  <button
-                                    onClick={() => handleAction(contract, 'complete')}
-                                    disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/25 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-400/50 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_12px_rgba(16,185,129,0.3)] disabled:opacity-50 cursor-pointer"
-                                    title="Confirm signed document is correct and complete contract"
-                                  >
-                                    {isCompleting ? (
-                                      <Loader2 size={13} className="animate-spin" />
-                                    ) : (
-                                      <ShieldCheck size={13} strokeWidth={2.2} />
-                                    )}
-                                    <span>Confirm & Complete</span>
-                                  </button>
+                            {isExecuted ? (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {/* Confirm & Complete Button */}
+                                <button
+                                  onClick={() => openConfirmSingleModal(contract)}
+                                  disabled={isAnyActionLoading}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/25 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-400/50 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_12px_rgba(16,185,129,0.3)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  title="Confirm signed document is correct and complete contract"
+                                >
+                                  {isCompleting ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    <ShieldCheck size={13} strokeWidth={2.2} />
+                                  )}
+                                  <span>Confirm & Complete</span>
+                                </button>
 
-                                  {/* Request Changes Button */}
-                                  <button
-                                    onClick={() => openChangeModal(contract)}
-                                    disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-white border border-orange-500/40 hover:border-orange-500 transition-all duration-200 shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-50 cursor-pointer"
-                                    title="Flag issue with reason and request changes"
-                                  >
-                                    <AlertTriangle size={13} strokeWidth={2.2} />
-                                    <span>Request Changes</span>
-                                  </button>
-                                </div>
-                              ) : isCompleted ? (
-                                <span className="text-xs text-emerald-300 flex items-center gap-1.5 font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                                  <CheckCircle2 size={13} className="text-emerald-400" />
-                                  <span>Completed</span>
-                                </span>
-                              ) : isChangesRequested ? (
-                                <span className="text-xs text-orange-300 flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                                  <Clock size={13} className="text-orange-400" />
-                                  <span>Changes Requested</span>
-                                </span>
-                              ) : isResent ? (
-                                <span className="text-xs text-indigo-300 flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
-                                  <Clock size={13} className="text-indigo-400" />
-                                  <span>Sent for Resignature</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-500 flex items-center gap-1 font-medium">
-                                  <CheckCircle2 size={13} className="text-gray-600" />
-                                  <span>No actions needed</span>
-                                </span>
-                              )}
-                            </div>
+                                {/* Request Changes Button */}
+                                <button
+                                  onClick={() => openChangeModal(contract)}
+                                  disabled={isAnyActionLoading}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-white border border-orange-500/40 hover:border-orange-500 transition-all duration-200 shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  title="Flag issue with reason and request changes"
+                                >
+                                  <AlertTriangle size={13} strokeWidth={2.2} />
+                                  <span>Request Changes</span>
+                                </button>
+                              </div>
+                            ) : isCompleted ? (
+                              <span className="text-xs text-emerald-300 flex items-center gap-1.5 font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)] whitespace-nowrap">
+                                <CheckCircle2 size={13} className="text-emerald-400" />
+                                <span>Completed</span>
+                              </span>
+                            ) : isChangesRequested ? (
+                              <span className="text-xs text-orange-300 flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20 whitespace-nowrap">
+                                <Clock size={13} className="text-orange-400" />
+                                <span>Changes Requested</span>
+                              </span>
+                            ) : isResent ? (
+                              <span className="text-xs text-indigo-300 flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 whitespace-nowrap">
+                                <Clock size={13} className="text-indigo-400" />
+                                <span>Sent for Resignature</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-500 flex items-center gap-1 font-medium whitespace-nowrap">
+                                <CheckCircle2 size={13} className="text-gray-600" />
+                                <span>No actions needed</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -716,6 +763,166 @@ export default function ReceiverCenter({ onShowToast }) {
           </div>
         )}
       </motion.div>
+
+      {/* Confirm Single Document Modal */}
+      {confirmSingleModal.isOpen && confirmSingleModal.contract && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="glass-panel border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl bg-slate-900/95"
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-white/10 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-lg leading-tight">Confirm Document</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {confirmSingleModal.contract.company_name || confirmSingleModal.contract.client_name || 'Client Contract'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeConfirmSingleModal}
+                disabled={confirmSingleModal.isSubmitting}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                {getDocTypeBadge(confirmSingleModal.contract.doc_type)}
+                <span className="text-xs text-gray-400 font-medium">
+                  {confirmSingleModal.contract.signatory_name || confirmSingleModal.contract.client_email || ''}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm leading-relaxed">
+                The {confirmSingleModal.contract.doc_type || 'document'} is signed and confirmed and will be sent to the internal team.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={closeConfirmSingleModal}
+                  disabled={confirmSingleModal.isSubmitting}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteSingleConfirm}
+                  disabled={confirmSingleModal.isSubmitting}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {confirmSingleModal.isSubmitting ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Confirming...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} strokeWidth={2.2} />
+                      <span>Confirm & Send</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirm Both Documents Modal */}
+      {confirmBothModal.isOpen && confirmBothModal.group && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="glass-panel border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl bg-slate-900/95"
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-white/10 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-lg leading-tight">Confirm Both Documents</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {confirmBothModal.group.companyName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeConfirmBothModal}
+                disabled={confirmBothModal.isSubmitting}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm">
+                  NDA + SLA
+                </span>
+                <span className="text-xs text-gray-400 font-medium">
+                  {confirmBothModal.group.signatoryName || confirmBothModal.group.clientEmail || ''}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm leading-relaxed">
+                Both documents are signed and confirmed and will be sent to the internal team.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={closeConfirmBothModal}
+                  disabled={confirmBothModal.isSubmitting}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteBothConfirm}
+                  disabled={confirmBothModal.isSubmitting}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {confirmBothModal.isSubmitting ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Confirming...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} strokeWidth={2.2} />
+                      <span>Confirm & Send</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
 
       {/* Request Changes Modal */}
       {changeModal.isOpen && createPortal(

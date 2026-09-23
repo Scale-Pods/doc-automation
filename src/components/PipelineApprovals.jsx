@@ -10,6 +10,7 @@ import {
   Loader2,
   RefreshCw,
   FileText,
+  FilePlus,
   Building2,
   Calendar,
   ExternalLink,
@@ -29,6 +30,13 @@ import {
   fetchContracts
 } from '../lib/supabaseClient';
 
+const GENERATION_STEPS = [
+  'Preparing template...',
+  'Filling client details...',
+  'Formatting agreement clauses...',
+  'Saving to Approval Center...'
+];
+
 export default function PipelineApprovals({ onShowToast }) {
   const [contracts, setContracts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +45,12 @@ export default function PipelineApprovals({ onShowToast }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState({}); // { [contractId]: 'approve' | 'reject' | 'reopen' }
   const [batchLoading, setBatchLoading] = useState({}); // { [companyName]: boolean }
+  const [generatingState, setGeneratingState] = useState({
+    isGenerating: false,
+    docType: '',
+    companyName: '',
+    currentStepIndex: 0
+  });
   const [previewModal, setPreviewModal] = useState({ isOpen: false, url: '', title: '' });
   const [rejectionModal, setRejectionModal] = useState({
     isOpen: false,
@@ -45,6 +59,66 @@ export default function PipelineApprovals({ onShowToast }) {
     isSubmitting: false
   });
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // Rotate generation step indicator during loading overlay
+  useEffect(() => {
+    if (!generatingState.isGenerating) return;
+    const timer = setInterval(() => {
+      setGeneratingState(prev => {
+        if (!prev.isGenerating) return prev;
+        return {
+          ...prev,
+          currentStepIndex: (prev.currentStepIndex + 1) % GENERATION_STEPS.length
+        };
+      });
+    }, 1800);
+    return () => clearInterval(timer);
+  }, [generatingState.isGenerating]);
+
+  // Handle generating missing document (SLA or NDA)
+  const handleGenerateMissingDoc = async (contract, targetDocType, companyName) => {
+    if (!contract || !contract.id || !targetDocType) return;
+    const contractId = contract.id;
+
+    setGeneratingState({
+      isGenerating: true,
+      docType: targetDocType,
+      companyName: companyName || contract.company_name || 'Client',
+      currentStepIndex: 0
+    });
+
+    const payload = {
+      contract_id: contractId,
+      doc_type: targetDocType
+    };
+
+    console.log('Dispatching generate missing doc webhook payload:', payload);
+
+    try {
+      const response = await fetch('https://n8n.srv1711190.hstgr.cloud/webhook/generate-missing-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook error (${response.status}): ${response.statusText}`);
+      }
+
+      onShowToast?.(`${targetDocType} generated and added for review`, 'success');
+      await loadContracts();
+    } catch (error) {
+      console.error('Error generating missing document:', error);
+      onShowToast?.(error.message || `Failed to generate ${targetDocType}. Please try again.`, 'error');
+    } finally {
+      setGeneratingState({
+        isGenerating: false,
+        docType: '',
+        companyName: '',
+        currentStepIndex: 0
+      });
+    }
+  };
 
   const loadContracts = async () => {
     setIsLoading(true);
@@ -598,8 +672,10 @@ export default function PipelineApprovals({ onShowToast }) {
           <div className="space-y-4">
             {companyGroups.map((group, gIdx) => {
               const docCount = group.contracts.length;
-              const allInReview = group.contracts.length > 0 && group.contracts.every(c => (c.status || '').toLowerCase() === 'in_review');
+              const allInReview = group.contracts.length > 1 && group.contracts.every(c => (c.status || '').toLowerCase() === 'in_review');
               const isThisBatchLoading = Boolean(batchLoading[group.companyName]);
+              const hasNda = group.contracts.some(c => (c.doc_type || '').toUpperCase().includes('NDA'));
+              const hasSla = group.contracts.some(c => (c.doc_type || '').toUpperCase().includes('SLA'));
 
               return (
                 <motion.div
@@ -625,7 +701,7 @@ export default function PipelineApprovals({ onShowToast }) {
                             <span>{docCount} {docCount === 1 ? 'Contract' : 'Contracts'}</span>
                           </span>
 
-                          {/* "Approve Both & Send" Action Button */}
+                          {/* "Approve Both & Send" Action Button (Only when both contracts exist) */}
                           {allInReview && (
                             <button
                               onClick={() => handleApproveBothAndSend(group)}
@@ -666,11 +742,17 @@ export default function PipelineApprovals({ onShowToast }) {
                   <div className="flex-1 flex flex-col justify-center divide-y divide-white/5">
                     {group.contracts.map((contract, cIdx) => {
                       const docType = contract.doc_type || 'NDA';
+                      const docTypeUpper = docType.toUpperCase();
                       const driveUrl = contract.drive_file_url || contract.file_url || contract.sla_url || contract.nda_url || '';
                       const statusLower = (contract.status || '').toLowerCase();
                       const isInReview = statusLower === 'in_review';
                       const isTerminated = statusLower === 'terminated' || statusLower === 'rejected';
                       const rejectionReason = contract.rejection_reason || contract.reason || '';
+
+                      const isNdaOnly = hasNda && !hasSla && docTypeUpper.includes('NDA');
+                      const isSlaOnly = hasSla && !hasNda && docTypeUpper.includes('SLA');
+                      const missingDocType = isNdaOnly ? 'SLA' : (isSlaOnly ? 'NDA' : null);
+                      const canGenerateMissing = Boolean(missingDocType);
 
                       const isApproving = actionLoading[contract.id] === 'approve';
                       const isRejecting = actionLoading[contract.id] === 'reject';
@@ -680,16 +762,20 @@ export default function PipelineApprovals({ onShowToast }) {
                       return (
                         <div
                           key={contract.id || cIdx}
-                          className="p-4 sm:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors"
+                          className="p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors"
                         >
-                          {/* Sub-row Left: Doc Type Badge, Created Date, and Rejection Reason Callout */}
-                          <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          {/* Sub-row Left: Doc Type Badge, Created Date, Status Badge & Rejection Reason Callout */}
+                          <div className="flex flex-col gap-2 min-w-0">
                             <div className="flex items-center gap-3 flex-wrap">
                               {getDocTypeBadge(docType)}
 
-                              <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium whitespace-nowrap">
                                 <Calendar size={13} className="text-gray-500 shrink-0" />
                                 <span>{formatDate(contract.created_at)}</span>
+                              </div>
+
+                              <div className="shrink-0">
+                                {getStatusBadge(contract.status)}
                               </div>
                             </div>
 
@@ -705,84 +791,88 @@ export default function PipelineApprovals({ onShowToast }) {
                             )}
                           </div>
 
-                          {/* Sub-row Right: Status Badge, View Doc Button & Actions */}
-                          <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 flex-wrap">
-                            {/* Status Badge */}
-                            <div>
-                              {getStatusBadge(contract.status)}
-                            </div>
-
+                          {/* Sub-row Right: View Doc, Generate Missing Doc & Actions */}
+                          <div className="flex items-center gap-2.5 flex-wrap justify-start xl:justify-end shrink-0">
                             {/* View Doc Button */}
-                            <div>
-                              {driveUrl ? (
-                                <button
-                                  onClick={() => openPreview(driveUrl, `${group.companyName} - ${docType}`)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer"
-                                >
-                                  <Eye size={13} />
-                                  <span>View Doc</span>
-                                </button>
-                              ) : (
-                                <span className="text-xs text-gray-500 italic">No Doc URL</span>
-                              )}
-                            </div>
+                            {driveUrl ? (
+                              <button
+                                onClick={() => openPreview(driveUrl, `${group.companyName} - ${docType}`)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                              >
+                                <Eye size={13} />
+                                <span>View Doc</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-500 italic">No Doc URL</span>
+                            )}
 
-                            {/* Action Buttons */}
-                            <div className="min-w-[150px] flex justify-end">
-                              {isInReview ? (
-                                <div className="flex items-center gap-2">
-                                  {/* Approve & Send Button (Direct to Sent for Signature) */}
-                                  <button
-                                    onClick={() => handleAction(contract, 'approve')}
-                                    disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer"
-                                    title="Approve and send contract for signature"
-                                  >
-                                    {isApproving ? (
-                                      <Loader2 size={13} className="animate-spin" />
-                                    ) : (
-                                      <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
-                                    )}
-                                    <span>Approve & Send</span>
-                                  </button>
+                            {/* Generate Missing Document Button */}
+                            {canGenerateMissing && (
+                              <button
+                                onClick={() => handleGenerateMissingDoc(contract, missingDocType, group.companyName)}
+                                disabled={generatingState.isGenerating || isAnyActionLoading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-400 transition-all shadow-sm cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                title={`Generate missing ${missingDocType} using saved client details`}
+                              >
+                                <FilePlus size={13} />
+                                <span>Generate {missingDocType}</span>
+                              </button>
+                            )}
 
-                                  {/* Reject Button (Opens Rejection Modal) */}
-                                  <button
-                                    onClick={() => openRejectModal(contract)}
-                                    disabled={isAnyActionLoading}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer"
-                                    title="Reject contract with reason"
-                                  >
-                                    {isRejecting ? (
-                                      <Loader2 size={13} className="animate-spin" />
-                                    ) : (
-                                      <X size={13} strokeWidth={2.5} />
-                                    )}
-                                    <span>Reject</span>
-                                  </button>
-                                </div>
-                              ) : isTerminated ? (
-                                /* Active Reuse Contract Button for Terminated Contracts */
+                            {/* Action Decision Buttons */}
+                            {isInReview ? (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {/* Approve & Send Button (Direct to Sent for Signature) */}
                                 <button
-                                  onClick={() => handleAction(contract, 'reopen')}
+                                  onClick={() => handleAction(contract, 'approve')}
                                   disabled={isAnyActionLoading}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50 cursor-pointer"
-                                  title="Reopen contract for review"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  title="Approve and send contract for signature"
                                 >
-                                  {isReopening ? (
+                                  {isApproving ? (
                                     <Loader2 size={13} className="animate-spin" />
                                   ) : (
-                                    <RotateCcw size={13} strokeWidth={2.2} />
+                                    <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
                                   )}
-                                  <span>↻ Reuse Contract</span>
+                                  <span>Approve & Send</span>
                                 </button>
-                              ) : (
-                                <span className="text-xs text-gray-500 flex items-center gap-1 font-medium">
-                                  <CheckCircle2 size={13} className="text-gray-600" />
-                                  <span>No actions needed</span>
-                                </span>
-                              )}
-                            </div>
+
+                                {/* Reject Button (Opens Rejection Modal) */}
+                                <button
+                                  onClick={() => openRejectModal(contract)}
+                                  disabled={isAnyActionLoading}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  title="Reject contract with reason"
+                                >
+                                  {isRejecting ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    <X size={13} strokeWidth={2.5} />
+                                  )}
+                                  <span>Reject</span>
+                                </button>
+                              </div>
+                            ) : isTerminated ? (
+                              /* Active Reuse Contract Button for Terminated Contracts */
+                              <button
+                                onClick={() => handleAction(contract, 'reopen')}
+                                disabled={isAnyActionLoading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                title="Reopen contract and move back to in review"
+                              >
+                                {isReopening ? (
+                                  <Loader2 size={13} className="animate-spin" />
+                                ) : (
+                                  <RotateCcw size={13} />
+                                )}
+                                <span>Reuse Contract</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-500 flex items-center gap-1 font-medium whitespace-nowrap">
+                                <CheckCircle2 size={13} className="text-gray-600" />
+                                <span>No actions needed</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -931,6 +1021,61 @@ export default function PipelineApprovals({ onShowToast }) {
                 title={previewModal.title}
                 allow="autoplay"
               />
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {/* Full-screen Loading Overlay for Generating Missing Document */}
+      {generatingState.isGenerating && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 15 }}
+            className="glass-panel border border-glow/40 rounded-3xl max-w-md w-full p-8 shadow-2xl bg-slate-900/95 flex flex-col items-center text-center relative overflow-hidden"
+          >
+            {/* Top subtle glowing line */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-glow to-transparent opacity-70" />
+
+            {/* Glowing Icon Container */}
+            <div className="relative mb-6">
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-glow/20 via-blue-600/20 to-purple-600/20 border border-glow/40 flex items-center justify-center text-glow shadow-[0_0_30px_rgba(0,243,255,0.3)]">
+                <FileText className="animate-pulse" size={38} />
+              </div>
+              <div className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-dark border border-glow/50 text-glow">
+                <Loader2 size={16} className="animate-spin" />
+              </div>
+            </div>
+
+            {/* Title & Subtitle */}
+            <h3 className="text-2xl font-bold text-white mb-2 tracking-tight">
+              Generating {generatingState.docType}…
+            </h3>
+            <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+              Using saved client details for <span className="text-white font-semibold">{generatingState.companyName}</span>
+            </p>
+
+            {/* Step Progress Pill */}
+            <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-center gap-3">
+              <Loader2 size={16} className="animate-spin text-glow shrink-0" />
+              <span className="text-xs font-medium text-cyan-300 animate-pulse">
+                {GENERATION_STEPS[generatingState.currentStepIndex]}
+              </span>
+            </div>
+
+            <div className="mt-4 flex items-center gap-1.5">
+              {GENERATION_STEPS.map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    idx === generatingState.currentStepIndex
+                      ? 'w-6 bg-glow shadow-[0_0_10px_rgba(0,243,255,0.6)]'
+                      : 'w-1.5 bg-white/20'
+                  }`}
+                />
+              ))}
             </div>
           </motion.div>
         </div>,

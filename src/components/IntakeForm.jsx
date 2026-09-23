@@ -134,6 +134,31 @@ export default function IntakeForm({ onShowToast }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Validate that all fields are filled
+    const requiredFields = [
+      { key: 'client_company_name', label: 'Client Company Name' },
+      { key: 'effective_date', label: 'Effective Date' },
+      { key: 'client_email_address', label: 'Client Email Address' },
+      { key: 'client_address', label: 'Client Address' },
+      { key: 'client_location', label: 'Client Location' },
+      { key: 'rera_license_no', label: 'RERA License No.' },
+      { key: 'client_signatory_name', label: 'Client Signatory Name' },
+      { key: 'client_designation', label: 'Client Designation' },
+    ];
+
+    for (const field of requiredFields) {
+      if (!formData[field.key] || !String(formData[field.key]).trim()) {
+        showToast(`Please fill in ${field.label}.`, 'error');
+        return;
+      }
+    }
+
+    if (!toggles.generateSLA && !toggles.generateNDA) {
+      showToast('Please select at least one document type (SLA or NDA) to generate.', 'error');
+      return;
+    }
+
     setIsLoading(true);
     const genStartTime = new Date().toISOString();
     const payload = {
@@ -186,6 +211,7 @@ export default function IntakeForm({ onShowToast }) {
           nda_url: ndaUrl,
           sla_file_id: data.sla_file_id || data.sla_drive_file_id || data.sla_id || extractDriveFileId(slaUrl),
           nda_file_id: data.nda_file_id || data.nda_drive_file_id || data.nda_id || extractDriveFileId(ndaUrl),
+          generation_data: data.generation_data || null,
         };
         setGeneratedDocs(docs);
         setFinalEmail(formData.client_email_address);
@@ -204,6 +230,7 @@ export default function IntakeForm({ onShowToast }) {
         nda_url: fallbackNda,
         sla_file_id: extractDriveFileId(fallbackSla),
         nda_file_id: extractDriveFileId(fallbackNda),
+        generation_data: null,
       });
       setFinalEmail(formData.client_email_address);
       setModalStep('review');
@@ -224,6 +251,7 @@ export default function IntakeForm({ onShowToast }) {
       const clientAddress = (formData.client_address || '').trim() || null;
       const slaFileId = generatedDocs.sla_file_id || extractDriveFileId(generatedDocs.sla_url);
       const ndaFileId = generatedDocs.nda_file_id || extractDriveFileId(generatedDocs.nda_url);
+      const generationData = generatedDocs.generation_data || null;
 
       if (toggles.generateSLA && generatedDocs.sla_url) {
         recordsToInsert.push({
@@ -235,7 +263,8 @@ export default function IntakeForm({ onShowToast }) {
           doc_type: 'SLA',
           status: 'in_review',
           drive_file_url: generatedDocs.sla_url,
-          drive_file_id: slaFileId
+          drive_file_id: slaFileId,
+          generation_data: generationData
         });
       }
 
@@ -249,7 +278,8 @@ export default function IntakeForm({ onShowToast }) {
           doc_type: 'NDA',
           status: 'in_review',
           drive_file_url: generatedDocs.nda_url,
-          drive_file_id: ndaFileId
+          drive_file_id: ndaFileId,
+          generation_data: generationData
         });
       }
 
@@ -265,7 +295,8 @@ export default function IntakeForm({ onShowToast }) {
             doc_type: 'SLA',
             status: 'in_review',
             drive_file_url: generatedDocs.sla_url,
-            drive_file_id: slaFileId
+            drive_file_id: slaFileId,
+            generation_data: generationData
           });
         }
         if (generatedDocs.nda_url) {
@@ -278,7 +309,8 @@ export default function IntakeForm({ onShowToast }) {
             doc_type: 'NDA',
             status: 'in_review',
             drive_file_url: generatedDocs.nda_url,
-            drive_file_id: ndaFileId
+            drive_file_id: ndaFileId,
+            generation_data: generationData
           });
         }
       }
@@ -415,7 +447,7 @@ export default function IntakeForm({ onShowToast }) {
               <div className="col-span-full">
                 <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
                   <MapPin size={16} className="text-glow" />
-                  Client Address
+                  Client Address <span className="text-cyan-400">*</span>
                 </label>
                 <textarea 
                   name="client_address" 
@@ -423,6 +455,7 @@ export default function IntakeForm({ onShowToast }) {
                   onChange={handleChange} 
                   placeholder="e.g. Suite 804, Building 5, Bay Square, Business Bay, P.O. Box 74211" 
                   className="input-field min-h-[90px] resize-none" 
+                  required
                 />
               </div>
 
@@ -430,7 +463,7 @@ export default function IntakeForm({ onShowToast }) {
               <div>
                 <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
                   <Globe size={16} className="text-glow" />
-                  Client Location
+                  Client Location <span className="text-cyan-400">*</span>
                 </label>
                 <input 
                   type="text" 
@@ -439,6 +472,7 @@ export default function IntakeForm({ onShowToast }) {
                   onChange={handleChange} 
                   placeholder="e.g. Dubai, United Arab Emirates" 
                   className="input-field" 
+                  required
                 />
               </div>
 
@@ -446,7 +480,7 @@ export default function IntakeForm({ onShowToast }) {
               <div>
                 <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
                   <ShieldCheck size={16} className="text-glow" />
-                  RERA License No.
+                  RERA License No. <span className="text-cyan-400">*</span>
                 </label>
                 <input 
                   type="text" 
@@ -455,6 +489,7 @@ export default function IntakeForm({ onShowToast }) {
                   onChange={handleChange} 
                   placeholder="e.g. RERA-58492 or ORN-10293" 
                   className="input-field" 
+                  required
                 />
               </div>
 
@@ -494,6 +529,9 @@ export default function IntakeForm({ onShowToast }) {
             </div>
 
             <div className="mb-10 space-y-4">
+              <div className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <span>Select Document Type(s) to Generate <span className="text-cyan-400">*</span></span>
+              </div>
               <label className="flex items-center gap-4 cursor-pointer group min-h-[44px]">
                 <input type="checkbox" className="custom-checkbox" checked={toggles.generateSLA} onChange={() => handleToggle('generateSLA')} />
                 <span className="text-lg group-hover:text-glow transition-colors">Generate SLA (Service Level Agreement)</span>
