@@ -142,7 +142,6 @@ export default function IntakeForm({ onShowToast }) {
       { key: 'client_email_address', label: 'Client Email Address' },
       { key: 'client_address', label: 'Client Address' },
       { key: 'client_location', label: 'Client Location' },
-      { key: 'rera_license_no', label: 'RERA License No.' },
       { key: 'client_signatory_name', label: 'Client Signatory Name' },
       { key: 'client_designation', label: 'Client Designation' },
     ];
@@ -480,7 +479,7 @@ export default function IntakeForm({ onShowToast }) {
               <div>
                 <label className="label-text flex items-center gap-1.5 font-semibold text-slate-200 mb-1.5">
                   <ShieldCheck size={16} className="text-glow" />
-                  RERA License No. <span className="text-cyan-400">*</span>
+                  RERA License No. <span className="text-xs font-normal text-slate-400">(Optional)</span>
                 </label>
                 <input 
                   type="text" 
@@ -489,7 +488,6 @@ export default function IntakeForm({ onShowToast }) {
                   onChange={handleChange} 
                   placeholder="e.g. RERA-58492 or ORN-10293" 
                   className="input-field" 
-                  required
                 />
               </div>
 
