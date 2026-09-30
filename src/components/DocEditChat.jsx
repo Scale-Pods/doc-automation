@@ -451,6 +451,21 @@ export default function DocEditChat({
     scrollToBottom();
   }, [messages, loading, pickerLoading, attachedFiles]);
 
+  // Auto-resize textarea as text expands/wraps downwards
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 180)}px`;
+    }
+  }, [inputMessage]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage(e);
+    }
+  };
+
   // Handle adding new files from input or clipboard paste
   const handleFilesAdded = async (filesToAdd) => {
     if (!filesToAdd || filesToAdd.length === 0) return;
@@ -724,6 +739,7 @@ export default function DocEditChat({
     const updatedMessages = [...messages, newUserMsg];
     setMessages(updatedMessages);
     setInputMessage('');
+    if (inputRef.current) inputRef.current.style.height = 'auto';
     setAttachedFiles([]);
     setAttachmentError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1490,7 +1506,7 @@ export default function DocEditChat({
                 </div>
               )}
 
-              <div className="flex items-center gap-2 bg-black/60 border border-white/15 focus-within:border-glow/70 focus-within:ring-1 focus-within:ring-glow/70 rounded-2xl p-1.5 sm:p-2 pl-3.5 sm:pl-4.5 transition-all shadow-inner">
+              <div className="flex items-end gap-2 bg-black/60 border border-white/15 focus-within:border-glow/70 focus-within:ring-1 focus-within:ring-glow/70 rounded-2xl p-1.5 sm:p-2 pl-3.5 sm:pl-4.5 transition-all shadow-inner">
                 {/* Hidden File Input */}
                 <input
                   ref={fileInputRef}
@@ -1501,11 +1517,12 @@ export default function DocEditChat({
                   className="hidden"
                 />
 
-                <input
+                <textarea
                   ref={inputRef}
-                  type="text"
+                  rows={1}
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder={
                     selectedContracts.length > 0
@@ -1513,10 +1530,10 @@ export default function DocEditChat({
                       : 'Ask a question or select a document to start...'
                   }
                   disabled={loading}
-                  className="flex-1 min-w-0 bg-transparent py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 focus:outline-none"
+                  className="flex-1 min-w-0 bg-transparent py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 focus:outline-none resize-none max-h-44 scrollbar-thin scrollbar-thumb-white/10 leading-relaxed overflow-y-auto"
                 />
 
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 pb-0.5">
                   {/* Paperclip Button */}
                   <button
                     type="button"
@@ -1545,7 +1562,7 @@ export default function DocEditChat({
               </div>
               <div className="mt-2 px-1 flex items-center justify-between text-[11px] text-gray-500">
                 <span>Attach references (.pdf, .docx, images) or paste screenshots</span>
-                <span>Press Enter to send</span>
+                <span>Press Enter to send, Shift+Enter for new line</span>
               </div>
             </form>
           </motion.div>
