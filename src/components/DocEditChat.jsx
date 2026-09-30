@@ -985,8 +985,9 @@ export default function DocEditChat({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <AnimatePresence>
-      {isOpen && (
+    <>
+      <AnimatePresence>
+        {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-8">
           {/* Backdrop Blur Overlay */}
           <motion.div
@@ -1550,15 +1551,18 @@ export default function DocEditChat({
           </motion.div>
         </div>
       )}
+    </AnimatePresence>
 
-      {/* Big Pop-up Document Preview Modal */}
-      {previewModal.isOpen && createPortal(
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-lg">
+    {/* Big Pop-up Document Preview Modal */}
+    <AnimatePresence>
+      {previewModal.isOpen && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-lg">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            className={`border border-cyan-500/40 rounded-3xl flex flex-col overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95),0_0_35px_rgba(0,243,255,0.25)] bg-[#0b0c14] transition-all duration-300 ${
+            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className={`border border-cyan-500/40 rounded-3xl flex flex-col overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95),0_0_35px_rgba(0,243,255,0.25)] bg-[#0b0c14] text-white transition-all duration-300 ${
               previewFullScreen ? 'w-full h-full rounded-none' : 'w-full max-w-5xl h-[88vh]'
             }`}
           >
@@ -1577,18 +1581,20 @@ export default function DocEditChat({
                 {/* Open in new tab */}
                 {previewModal.url && (
                   <a
-                    href={previewModal.url.replace('/preview', '/view')}
+                    href={previewModal.url.replace('/preview', '/view').replace('/edit', '/view')}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
-                    title="Open in new tab"
+                    className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                    title="Open in Google Drive / Docs"
                   >
-                    <ExternalLink size={17} />
+                    <ExternalLink size={16} />
+                    <span className="hidden sm:inline">Open Drive</span>
                   </a>
                 )}
 
                 {/* Fullscreen toggle */}
                 <button
+                  type="button"
                   onClick={() => setPreviewFullScreen(!previewFullScreen)}
                   className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                   title={previewFullScreen ? "Exit Fullscreen" : "Fullscreen"}
@@ -1598,6 +1604,7 @@ export default function DocEditChat({
 
                 {/* Close button */}
                 <button
+                  type="button"
                   onClick={() => setPreviewModal({ isOpen: false, url: '', title: '' })}
                   className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                   title="Close preview"
@@ -1615,21 +1622,30 @@ export default function DocEditChat({
                   src={previewModal.url}
                   className="w-full h-full border-none"
                   title={previewModal.title}
-                  allow="autoplay"
+                  allow="autoplay; encrypted-media; fullscreen"
                 />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2 p-6 text-center">
-                  <AlertCircle size={28} className="text-amber-400" />
-                  <p className="font-semibold text-white text-sm">No preview URL available for this document</p>
-                  <p className="text-xs text-gray-500">The document URL is being generated or was not returned.</p>
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-3 p-6 text-center">
+                  <AlertCircle size={32} className="text-amber-400" />
+                  <p className="font-semibold text-white text-base">Document URL Not Available</p>
+                  <p className="text-xs text-gray-400 max-w-md">
+                    The document URL was not found in the local session or database records.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openDocPreview(selectedContracts[0])}
+                    className="mt-2 px-4 py-2 rounded-xl bg-glow/20 text-glow border border-glow/40 hover:bg-glow/30 text-xs font-semibold cursor-pointer"
+                  >
+                    Retry Loading Document
+                  </button>
                 </div>
               )}
             </div>
           </motion.div>
-        </div>,
-        document.body
+        </div>
       )}
-    </AnimatePresence>,
+    </AnimatePresence>
+    </>,
     document.body
   );
 }
