@@ -24,7 +24,8 @@ import {
   RotateCcw,
   Send,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  FileEdit
 } from 'lucide-react';
 import {
   fetchContracts
@@ -37,9 +38,10 @@ const GENERATION_STEPS = [
   'Saving to Approval Center...'
 ];
 
-export default function PipelineApprovals({ onShowToast }) {
+export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refreshKey }) {
   const [contracts, setContracts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [previewVersion, setPreviewVersion] = useState(Date.now());
   const [fetchError, setFetchError] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -144,6 +146,14 @@ export default function PipelineApprovals({ onShowToast }) {
   useEffect(() => {
     loadContracts();
   }, []);
+
+  // Listen to external refresh trigger from onApplied
+  useEffect(() => {
+    if (refreshKey) {
+      setPreviewVersion(Date.now());
+      loadContracts();
+    }
+  }, [refreshKey]);
 
   // All live contracts from Supabase are displayed with filter tabs
 
@@ -342,7 +352,8 @@ export default function PipelineApprovals({ onShowToast }) {
     if (clean.includes('drive.google.com/file/d/')) {
       return clean.replace('/view', '/preview');
     }
-    return clean;
+    const sep = clean.includes('?') ? '&' : '?';
+    return `${clean}${sep}v=${previewVersion}`;
   };
 
   const openPreview = (url, title) => {
@@ -701,21 +712,33 @@ export default function PipelineApprovals({ onShowToast }) {
                             <span>{docCount} {docCount === 1 ? 'Contract' : 'Contracts'}</span>
                           </span>
 
-                          {/* "Approve Both & Send" Action Button (Only when both contracts exist) */}
+                          {/* "Approve Both & Send" & "Edit Both" Action Buttons (Only when both contracts exist) */}
                           {allInReview && (
-                            <button
-                              onClick={() => handleApproveBothAndSend(group)}
-                              disabled={isThisBatchLoading || group.contracts.some(c => Boolean(actionLoading[c.id]))}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500/25 via-teal-500/25 to-emerald-500/25 hover:from-emerald-500 hover:to-teal-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_12px_rgba(16,185,129,0.25)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] disabled:opacity-50 cursor-pointer"
-                              title="Approve both contracts and send via DocuSign"
-                            >
-                              {isThisBatchLoading ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <Send size={12} className="translate-x-0.5 -translate-y-0.5" />
-                              )}
-                              <span>Approve Both & Send</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => handleApproveBothAndSend(group)}
+                                disabled={isThisBatchLoading || group.contracts.some(c => Boolean(actionLoading[c.id]))}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-500/25 via-teal-500/25 to-emerald-500/25 hover:from-emerald-500 hover:to-teal-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_12px_rgba(16,185,129,0.25)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] disabled:opacity-50 cursor-pointer"
+                                title="Approve both contracts and send via DocuSign"
+                              >
+                                {isThisBatchLoading ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Send size={12} className="translate-x-0.5 -translate-y-0.5" />
+                                )}
+                                <span>Approve Both & Send</span>
+                              </button>
+
+                              <button
+                                onClick={() => onOpenDocEditChat?.(group.contracts)}
+                                disabled={isThisBatchLoading || group.contracts.some(c => Boolean(actionLoading[c.id]))}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-cyan-500/20 hover:from-cyan-500 hover:to-blue-500 text-cyan-300 hover:text-white border border-cyan-500/40 hover:border-cyan-400 transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.2)] hover:shadow-[0_0_18px_rgba(0,243,255,0.4)] disabled:opacity-50 cursor-pointer"
+                                title="Edit both contracts in AI Document Editor"
+                              >
+                                <FileEdit size={12} />
+                                <span>Edit Both</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -762,118 +785,126 @@ export default function PipelineApprovals({ onShowToast }) {
                       return (
                         <div
                           key={contract.id || cIdx}
-                          className="p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors"
+                          className="p-4 sm:p-5 flex flex-col gap-3 hover:bg-white/[0.02] transition-colors"
                         >
-                          {/* Sub-row Left: Doc Type Badge, Created Date, Status Badge & Rejection Reason Callout */}
-                          <div className="flex flex-col gap-2 min-w-0">
-                            <div className="flex items-center gap-3 flex-wrap">
+                          {/* Top Row: Left Metadata (Doc Type, Status, Date) & Right Actions */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+                            {/* Left Metadata */}
+                            <div className="flex items-center gap-2.5 flex-wrap">
                               {getDocTypeBadge(docType)}
-
-                              <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium whitespace-nowrap">
+                              {getStatusBadge(contract.status)}
+                              <div className="flex items-center gap-1 text-xs text-gray-400 font-medium whitespace-nowrap pl-1">
                                 <Calendar size={13} className="text-gray-500 shrink-0" />
                                 <span>{formatDate(contract.created_at)}</span>
                               </div>
-
-                              <div className="shrink-0">
-                                {getStatusBadge(contract.status)}
-                              </div>
                             </div>
 
-                            {/* Rejection Reason Callout if Terminated */}
-                            {isTerminated && rejectionReason && (
-                              <div className="mt-1 flex items-start gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed max-w-xl">
-                                <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="font-semibold text-rose-200 mr-1.5">Reason:</span>
-                                  <span className="text-rose-300/90">{rejectionReason}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Sub-row Right: View Doc, Generate Missing Doc & Actions */}
-                          <div className="flex items-center gap-2.5 flex-wrap justify-start xl:justify-end shrink-0">
-                            {/* View Doc Button */}
-                            {driveUrl ? (
-                              <button
-                                onClick={() => openPreview(driveUrl, `${group.companyName} - ${docType}`)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer whitespace-nowrap"
-                              >
-                                <Eye size={13} />
-                                <span>View Doc</span>
-                              </button>
-                            ) : (
-                              <span className="text-xs text-gray-500 italic">No Doc URL</span>
-                            )}
-
-                            {/* Generate Missing Document Button */}
-                            {canGenerateMissing && (
-                              <button
-                                onClick={() => handleGenerateMissingDoc(contract, missingDocType, group.companyName)}
-                                disabled={generatingState.isGenerating || isAnyActionLoading}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-400 transition-all shadow-sm cursor-pointer disabled:opacity-50 whitespace-nowrap"
-                                title={`Generate missing ${missingDocType} using saved client details`}
-                              >
-                                <FilePlus size={13} />
-                                <span>Generate {missingDocType}</span>
-                              </button>
-                            )}
-
-                            {/* Action Decision Buttons */}
-                            {isInReview ? (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {/* Approve & Send Button (Direct to Sent for Signature) */}
+                            {/* Right Action Toolbar */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* View Doc Button */}
+                              {driveUrl ? (
                                 <button
-                                  onClick={() => handleAction(contract, 'approve')}
-                                  disabled={isAnyActionLoading}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
-                                  title="Approve and send contract for signature"
+                                  onClick={() => openPreview(driveUrl, `${group.companyName} - ${docType}`)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-glow/10 text-gray-200 hover:text-glow border border-white/10 hover:border-glow/30 transition-all shadow-sm cursor-pointer whitespace-nowrap"
                                 >
-                                  {isApproving ? (
+                                  <Eye size={13} />
+                                  <span>View Doc</span>
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-500 italic px-2">No Doc URL</span>
+                              )}
+
+                              {/* Generate Missing Document Button */}
+                              {canGenerateMissing && (
+                                <button
+                                  onClick={() => handleGenerateMissingDoc(contract, missingDocType, group.companyName)}
+                                  disabled={generatingState.isGenerating || isAnyActionLoading}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-400 transition-all shadow-sm cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                  title={`Generate missing ${missingDocType} using saved client details`}
+                                >
+                                  <FilePlus size={13} />
+                                  <span>Generate {missingDocType}</span>
+                                </button>
+                              )}
+
+                              {/* Action Decision Buttons */}
+                              {isInReview ? (
+                                <>
+                                  {/* Edit Button */}
+                                  <button
+                                    onClick={() => onOpenDocEditChat?.([contract])}
+                                    disabled={isAnyActionLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white border border-cyan-500/40 hover:border-cyan-500 transition-all duration-200 shadow-[0_0_10px_rgba(0,243,255,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                    title="Edit contract clauses in AI Document Editor"
+                                  >
+                                    <FileEdit size={13} />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  {/* Approve & Send Button (Direct to Sent for Signature) */}
+                                  <button
+                                    onClick={() => handleAction(contract, 'approve')}
+                                    disabled={isAnyActionLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-500 transition-all duration-200 shadow-[0_0_10px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                    title="Approve and send contract for signature"
+                                  >
+                                    {isApproving ? (
+                                      <Loader2 size={13} className="animate-spin" />
+                                    ) : (
+                                      <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
+                                    )}
+                                    <span>Approve & Send</span>
+                                  </button>
+
+                                  {/* Reject Button (Opens Rejection Modal) */}
+                                  <button
+                                    onClick={() => openRejectModal(contract)}
+                                    disabled={isAnyActionLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                    title="Reject contract with reason"
+                                  >
+                                    {isRejecting ? (
+                                      <Loader2 size={13} className="animate-spin" />
+                                    ) : (
+                                      <X size={13} strokeWidth={2.5} />
+                                    )}
+                                    <span>Reject</span>
+                                  </button>
+                                </>
+                              ) : isTerminated ? (
+                                /* Active Reuse Contract Button for Terminated Contracts */
+                                <button
+                                  onClick={() => handleAction(contract, 'reopen')}
+                                  disabled={isAnyActionLoading}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                  title="Reopen contract and move back to in review"
+                                >
+                                  {isReopening ? (
                                     <Loader2 size={13} className="animate-spin" />
                                   ) : (
-                                    <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
+                                    <RotateCcw size={13} />
                                   )}
-                                  <span>Approve & Send</span>
+                                  <span>Reuse Contract</span>
                                 </button>
-
-                                {/* Reject Button (Opens Rejection Modal) */}
-                                <button
-                                  onClick={() => openRejectModal(contract)}
-                                  disabled={isAnyActionLoading}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
-                                  title="Reject contract with reason"
-                                >
-                                  {isRejecting ? (
-                                    <Loader2 size={13} className="animate-spin" />
-                                  ) : (
-                                    <X size={13} strokeWidth={2.5} />
-                                  )}
-                                  <span>Reject</span>
-                                </button>
-                              </div>
-                            ) : isTerminated ? (
-                              /* Active Reuse Contract Button for Terminated Contracts */
-                              <button
-                                onClick={() => handleAction(contract, 'reopen')}
-                                disabled={isAnyActionLoading}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 hover:text-white border border-cyan-500/30 hover:border-glow transition-all duration-200 shadow-[0_0_12px_rgba(0,243,255,0.15)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
-                                title="Reopen contract and move back to in review"
-                              >
-                                {isReopening ? (
-                                  <Loader2 size={13} className="animate-spin" />
-                                ) : (
-                                  <RotateCcw size={13} />
-                                )}
-                                <span>Reuse Contract</span>
-                              </button>
-                            ) : (
-                              <span className="text-xs text-gray-500 flex items-center gap-1 font-medium whitespace-nowrap">
-                                <CheckCircle2 size={13} className="text-gray-600" />
-                                <span>No actions needed</span>
-                              </span>
-                            )}
+                              ) : (
+                                <span className="text-xs text-gray-500 flex items-center gap-1 font-medium whitespace-nowrap px-1">
+                                  <CheckCircle2 size={13} className="text-gray-600" />
+                                  <span>No actions needed</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Rejection Reason Callout if Terminated */}
+                          {isTerminated && rejectionReason && (
+                            <div className="flex items-start gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed max-w-xl">
+                              <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-semibold text-rose-200 mr-1.5">Reason:</span>
+                                <span className="text-rose-300/90">{rejectionReason}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1016,6 +1047,7 @@ export default function PipelineApprovals({ onShowToast }) {
             {/* Modal Iframe Content */}
             <div className="flex-1 w-full h-full bg-slate-950 relative">
               <iframe
+                key={`preview-${previewVersion}-${previewModal.url}`}
                 src={previewModal.url}
                 className="w-full h-full border-none"
                 title={previewModal.title}
