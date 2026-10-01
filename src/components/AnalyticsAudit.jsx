@@ -331,10 +331,7 @@ export default function AnalyticsAudit({ onShowToast }) {
   const [searchAuditQuery, setSearchAuditQuery] = useState('');
   const [isConfigured, setIsConfigured] = useState(isSupabaseConfigured());
   const [expandedDocs, setExpandedDocs] = useState(new Set());
-  const [selectedMonthKey, setSelectedMonthKey] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [selectedMonthKey, setSelectedMonthKey] = useState('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState(null); // null | 'in_review' | 'sent' | 'executed' | 'changes_requested' | 'completed' | 'terminated'
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [chartViewMode, setChartViewMode] = useState('curve'); // 'curve' | 'bars'
@@ -544,10 +541,13 @@ export default function AnalyticsAudit({ onShowToast }) {
 
   // Compute Metrics for current timeframe
   const tfTotal = timeframeContracts.length;
-  const tfInReview = timeframeContracts.filter(c => (c.status || '').toLowerCase() === 'in_review').length;
+  const tfInReview = timeframeContracts.filter(c => {
+    const s = (c.status || 'in_review').toLowerCase().trim();
+    return s === 'in_review' || s === 'draft' || s === 'pending';
+  }).length;
   const tfSent = timeframeContracts.filter(c => {
     const s = (c.status || '').toLowerCase().trim();
-    return s === 'sent' || s === 'sent_for_signature' || s === 'resent_for_signature' || s === 'resent';
+    return s === 'sent' || s === 'sent_for_signature' || s === 'resent_for_signature' || s === 'resent' || s === 'approved' || s === 'approvals';
   }).length;
   const tfExecuted = timeframeContracts.filter(c => (c.status || '').toLowerCase() === 'executed').length;
   const tfChangesRequested = timeframeContracts.filter(c => (c.status || '').toLowerCase() === 'changes_requested').length;
