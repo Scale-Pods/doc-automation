@@ -543,23 +543,59 @@ export default function CustomDocuments({ onShowToast, onNavigateToApprovals }) 
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        throw new Error(`Save failed with status ${response.status}: ${response.statusText}`);
+      let resData = null;
+      let rawText = '';
+      try {
+        rawText = await response.text();
+        try {
+          resData = JSON.parse(rawText);
+        } catch {
+          resData = rawText;
+        }
+      } catch (readErr) {
+        console.warn('Could not read response text:', readErr);
       }
 
-      let resData = {};
-      try {
-        resData = await response.json();
-      } catch {
-        // Ignored if non-json returned
-      }
+      console.log('Template-save server response:', { status: response.status, data: resData });
 
       if (Array.isArray(resData) && resData.length > 0) {
         resData = resData[0];
       }
 
-      if (resData?.status && resData.status !== 'ok' && resData.status !== 'saved') {
-        throw new Error(resData?.message || resData?.error || 'Server reported an error saving the template.');
+      // Helper to pull the most descriptive error message
+      const extractError = (data, fallback) => {
+        if (!data) return fallback;
+        if (typeof data === 'string' && data.trim()) return data.trim();
+        if (typeof data.message === 'string' && data.message.trim()) return data.message.trim();
+        if (typeof data.errorMessage === 'string' && data.errorMessage.trim()) return data.errorMessage.trim();
+        if (typeof data.details === 'string' && data.details.trim()) return data.details.trim();
+        if (typeof data.reason === 'string' && data.reason.trim()) return data.reason.trim();
+        if (typeof data.description === 'string' && data.description.trim()) return data.description.trim();
+        if (typeof data.msg === 'string' && data.msg.trim()) return data.msg.trim();
+        if (data.error) {
+          if (typeof data.error === 'string' && data.error.trim()) return data.error.trim();
+          if (typeof data.error === 'object') {
+            return data.error.message || data.error.details || data.error.reason || JSON.stringify(data.error);
+          }
+        }
+        return fallback;
+      };
+
+      if (!response.ok) {
+        const errorMsg = extractError(resData, `Save failed with status ${response.status}: ${response.statusText}`);
+        throw new Error(errorMsg);
+      }
+
+      // Check for success or error statuses
+      const statusStr = typeof resData?.status === 'string' ? resData.status.toLowerCase().trim() : '';
+      const isExplicitSuccess = ['ok', 'saved', 'success', 'created', 'done', 'completed'].includes(statusStr) || resData?.success === true;
+      const isExplicitFailure = ['error', 'failed', 'failure', 'rejected'].includes(statusStr) || resData?.success === false;
+
+      if (isExplicitFailure || (statusStr && !isExplicitSuccess)) {
+        const fallbackMsg = statusStr
+          ? `Server returned status "${resData.status}" while saving the template.`
+          : 'Server reported an error saving the template.';
+        throw new Error(extractError(resData, fallbackMsg));
       }
 
       onShowToast?.('Template saved successfully!', 'success');
@@ -1321,9 +1357,27 @@ export default function CustomDocuments({ onShowToast, onNavigateToApprovals }) 
 
           {/* Save Error notice */}
           {saveError && (
-            <div className="p-4 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-200 flex items-center gap-3 text-sm">
-              <AlertCircle size={20} className="text-rose-400 shrink-0" />
-              <span>{saveError}</span>
+            <div className="p-4 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-200 flex items-start justify-between gap-3 text-sm">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={20} className="text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold text-rose-300">Template Save Error</div>
+                  <div className="text-rose-200">{saveError}</div>
+                  {Object.values(acceptedSuggestions).some(Boolean) && (
+                    <div className="text-xs text-rose-300/80 pt-1">
+                      Tip: If this document was converted from a PDF, text replacements can fail if characters or line breaks differ. Try unchecking suggestions in the &quot;Wording&quot; tab and clicking Save Template again.
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveError(null)}
+                className="text-rose-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                <X size={16} />
+              </button>
             </div>
           )}
 
