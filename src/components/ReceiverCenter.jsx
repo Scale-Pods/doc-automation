@@ -49,12 +49,7 @@ export default function ReceiverCenter({ onShowToast }) {
     contractIds: [],
     isSubmitting: false
   });
-  const [changeModal, setChangeModal] = useState({
-    isOpen: false,
-    contract: null,
-    reason: '',
-    isSubmitting: false
-  });
+
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   // Load contracts from Supabase
@@ -220,72 +215,6 @@ export default function ReceiverCenter({ onShowToast }) {
       setBatchLoading(prev => {
         const next = { ...prev };
         delete next[companyKey];
-        return next;
-      });
-    }
-  };
-
-  const openChangeModal = (contract) => {
-    setChangeModal({
-      isOpen: true,
-      contract,
-      reason: '',
-      isSubmitting: false
-    });
-  };
-
-  const closeChangeModal = () => {
-    setChangeModal({
-      isOpen: false,
-      contract: null,
-      reason: '',
-      isSubmitting: false
-    });
-  };
-
-  const handleConfirmChangeRequest = async (e) => {
-    e.preventDefault();
-    const contract = changeModal.contract;
-    if (!contract || !changeModal.reason.trim()) return;
-
-    const contractId = contract.id;
-    const reasonText = changeModal.reason.trim();
-
-    setChangeModal(prev => ({ ...prev, isSubmitting: true }));
-    setActionLoading(prev => ({ ...prev, [contractId]: 'request_changes' }));
-
-    const payload = {
-      contract_id: contractId,
-      reason: reasonText
-    };
-
-    console.log('Dispatching request-changes payload to webhook:', payload);
-
-    try {
-      const response = await fetch('https://n8n.srv1711190.hstgr.cloud/webhook/request-changes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Webhook error (${response.status}): ${response.statusText}`);
-      }
-
-      onShowToast?.('Change request sent — client has been notified', 'success');
-
-      // Optimistic status update to changes_requested
-      setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: 'changes_requested', rejection_reason: reasonText } : c));
-      closeChangeModal();
-      await loadContracts();
-    } catch (error) {
-      console.error('Error submitting change request:', error);
-      onShowToast?.('Something went wrong — please try again', 'error');
-      setChangeModal(prev => ({ ...prev, isSubmitting: false }));
-    } finally {
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[contractId];
         return next;
       });
     }
@@ -645,6 +574,8 @@ export default function ReceiverCenter({ onShowToast }) {
                   <div className="flex-1 flex flex-col justify-center divide-y divide-white/5">
                     {group.contracts.map((contract, cIdx) => {
                       const docType = contract.doc_type || 'NDA';
+                      const docTypeUpper = (contract.doc_type || '').trim().toUpperCase();
+                      const isCustomDoc = docTypeUpper !== 'NDA' && docTypeUpper !== 'SLA';
                       const signedDocUrl = contract.signed_doc_url || '';
                       const statusLower = (contract.status || '').toLowerCase();
                       const isExecuted = statusLower === 'executed';
@@ -721,16 +652,6 @@ export default function ReceiverCenter({ onShowToast }) {
                                   <span>Confirm & Complete</span>
                                 </button>
 
-                                {/* Request Changes Button */}
-                                <button
-                                  onClick={() => openChangeModal(contract)}
-                                  disabled={isAnyActionLoading}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-white border border-orange-500/40 hover:border-orange-500 transition-all duration-200 shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
-                                  title="Flag issue with reason and request changes"
-                                >
-                                  <AlertTriangle size={13} strokeWidth={2.2} />
-                                  <span>Request Changes</span>
-                                </button>
                               </div>
                             ) : isCompleted ? (
                               <span className="text-xs text-emerald-300 flex items-center gap-1.5 font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)] whitespace-nowrap">
@@ -922,84 +843,6 @@ export default function ReceiverCenter({ onShowToast }) {
                 </button>
               </div>
             </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
-
-      {/* Request Changes Modal */}
-      {changeModal.isOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="glass-panel border border-orange-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl bg-slate-900/95"
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-white/10 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(249,115,22,0.2)]">
-                  <AlertTriangle size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-lg leading-tight">Request Changes</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Specify why changes are needed before the document can be finalized.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={closeChangeModal}
-                disabled={changeModal.isSubmitting}
-                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleConfirmChangeRequest} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                  Change Request Details <span className="text-orange-400">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  placeholder="e.g., Section 3 payment milestones need adjustment before client resigns..."
-                  value={changeModal.reason}
-                  onChange={(e) => setChangeModal(prev => ({ ...prev, reason: e.target.value }))}
-                  className="w-full bg-black/50 border border-white/15 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none transition-all resize-none"
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={closeChangeModal}
-                  disabled={changeModal.isSubmitting}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!changeModal.reason.trim() || changeModal.isSubmitting}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.3)] transition-all disabled:opacity-50 cursor-pointer"
-                >
-                  {changeModal.isSubmitting ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    <span>Submit Change Request</span>
-                  )}
-                </button>
-              </div>
-            </form>
           </motion.div>
         </div>,
         document.body

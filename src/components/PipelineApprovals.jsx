@@ -25,7 +25,8 @@ import {
   Send,
   ShieldCheck,
   AlertTriangle,
-  FileEdit
+  FileEdit,
+  MessageSquare
 } from 'lucide-react';
 import {
   fetchContracts
@@ -61,6 +62,8 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
     isSubmitting: false
   });
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [editedContractIds, setEditedContractIds] = useState({});
+
 
   // Rotate generation step indicator during loading overlay
   useEffect(() => {
@@ -344,6 +347,18 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
     }
   };
 
+  const isCustomDoc = (docType) => {
+    const t = (docType || '').trim().toUpperCase();
+    return t !== 'NDA' && t !== 'SLA';
+  };
+
+  const handleOpenEdit = (contract) => {
+    if (contract?.id) {
+      setEditedContractIds(prev => ({ ...prev, [contract.id]: true }));
+    }
+    onOpenDocEditChat?.([contract]);
+  };
+
   const getCleanPreviewUrl = (url) => {
     if (!url) return '';
     let clean = url.trim();
@@ -369,9 +384,10 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
   const counts = {
     all: contracts.length,
     in_review: contracts.filter(c => (c.status || '').toLowerCase() === 'in_review').length,
+    changes_requested: contracts.filter(c => (c.status || '').toLowerCase() === 'changes_requested').length,
     approvals: contracts.filter(c => {
       const s = (c.status || '').toLowerCase();
-      return s === 'approvals' || s === 'approved' || s === 'sent' || s === 'sent_for_signature';
+      return s === 'approvals' || s === 'approved' || s === 'sent' || s === 'sent_for_signature' || s === 'resent_for_signature' || s === 'resent';
     }).length,
     executed: contracts.filter(c => {
       const s = (c.status || '').toLowerCase();
@@ -387,7 +403,18 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
       // Tab filter
       if (activeFilter !== 'all') {
         if (activeFilter === 'approvals' || activeFilter === 'sent') {
-          if (statusLower !== 'sent' && statusLower !== 'sent_for_signature' && statusLower !== 'approved' && statusLower !== 'approvals') {
+          if (
+            statusLower !== 'sent' &&
+            statusLower !== 'sent_for_signature' &&
+            statusLower !== 'approved' &&
+            statusLower !== 'approvals' &&
+            statusLower !== 'resent_for_signature' &&
+            statusLower !== 'resent'
+          ) {
+            return false;
+          }
+        } else if (activeFilter === 'changes_requested') {
+          if (statusLower !== 'changes_requested') {
             return false;
           }
         } else if (activeFilter === 'executed') {
@@ -515,26 +542,48 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
     }
   };
 
-  const getDocTypeBadge = (docType) => {
-    const type = (docType || 'NDA').toUpperCase();
-    if (type.includes('NDA') && type.includes('SLA')) {
-      return (
-        <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm">
-          NDA + SLA
-        </span>
-      );
-    }
-    if (type.includes('SLA')) {
+  const getDocTypeBadge = (contractOrType) => {
+    const contract = typeof contractOrType === 'object' && contractOrType !== null ? contractOrType : null;
+    const docType = contract ? (contract.doc_type || 'Custom') : (contractOrType || 'Custom');
+    const typeUpper = (docType || '').trim().toUpperCase();
+
+    if (typeUpper === 'SLA') {
       return (
         <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm">
           SLA
         </span>
       );
     }
+    if (typeUpper === 'NDA') {
+      return (
+        <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm">
+          NDA
+        </span>
+      );
+    }
+
+    // Custom Document
+    let genData = contract?.generation_data;
+    if (typeof genData === 'string') {
+      try {
+        genData = JSON.parse(genData);
+      } catch {}
+    }
+    const templateName = genData?.template_name || contract?.template_name || docType || 'Custom Document';
+    const revisionNum = contract?.revision_number ?? genData?.revision_number;
+
     return (
-      <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm">
-        NDA
-      </span>
+      <div className="inline-flex items-center gap-1.5 flex-wrap">
+        <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-glow/15 text-glow border border-glow/30 shadow-sm flex items-center gap-1">
+          <FileText size={12} className="shrink-0" />
+          <span>{templateName}</span>
+        </span>
+        {Number(revisionNum) > 1 && (
+          <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm">
+            Revision {revisionNum}
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -614,6 +663,7 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
             {[
               { key: 'all', label: 'All', count: counts.all },
               { key: 'in_review', label: 'In Review', count: counts.in_review },
+              { key: 'changes_requested', label: 'Changes Requested', count: counts.changes_requested },
               { key: 'approvals', label: 'Approvals', count: counts.approvals },
               { key: 'executed', label: 'Executed', count: counts.executed },
               { key: 'terminated', label: 'Terminated', count: counts.terminated }
@@ -685,8 +735,9 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
               const docCount = group.contracts.length;
               const allInReview = group.contracts.length > 1 && group.contracts.every(c => (c.status || '').toLowerCase() === 'in_review');
               const isThisBatchLoading = Boolean(batchLoading[group.companyName]);
-              const hasNda = group.contracts.some(c => (c.doc_type || '').toUpperCase().includes('NDA'));
-              const hasSla = group.contracts.some(c => (c.doc_type || '').toUpperCase().includes('SLA'));
+              const ndaContracts = group.contracts.filter(c => (c.doc_type || '').trim().toUpperCase() === 'NDA');
+              const slaContracts = group.contracts.filter(c => (c.doc_type || '').trim().toUpperCase() === 'SLA');
+              const isExactNdaSlaPair = group.contracts.length === 2 && ndaContracts.length === 1 && slaContracts.length === 1;
 
               return (
                 <motion.div
@@ -712,8 +763,8 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                             <span>{docCount} {docCount === 1 ? 'Contract' : 'Contracts'}</span>
                           </span>
 
-                          {/* "Approve Both & Send" & "Edit Both" Action Buttons (Only when both contracts exist) */}
-                          {allInReview && (
+                          {/* "Approve Both & Send" & "Edit Both" Action Buttons (Only when exactly one NDA plus one SLA exist and both in review) */}
+                          {isExactNdaSlaPair && allInReview && (
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <button
                                 onClick={() => handleApproveBothAndSend(group)}
@@ -765,17 +816,18 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                   <div className="flex-1 flex flex-col justify-center divide-y divide-white/5">
                     {group.contracts.map((contract, cIdx) => {
                       const docType = contract.doc_type || 'NDA';
-                      const docTypeUpper = docType.toUpperCase();
+                      const docTypeUpper = (contract.doc_type || '').trim().toUpperCase();
+                      const isCustom = isCustomDoc(contract.doc_type);
                       const driveUrl = contract.drive_file_url || contract.file_url || contract.sla_url || contract.nda_url || '';
-                      const statusLower = (contract.status || '').toLowerCase();
+                      const statusLower = (contract.status || '').toLowerCase().trim();
                       const isInReview = statusLower === 'in_review';
                       const isTerminated = statusLower === 'terminated' || statusLower === 'rejected';
                       const rejectionReason = contract.rejection_reason || contract.reason || '';
 
-                      const isNdaOnly = hasNda && !hasSla && docTypeUpper.includes('NDA');
-                      const isSlaOnly = hasSla && !hasNda && docTypeUpper.includes('SLA');
-                      const missingDocType = isNdaOnly ? 'SLA' : (isSlaOnly ? 'NDA' : null);
-                      const canGenerateMissing = Boolean(missingDocType);
+                      const isNda = docTypeUpper === 'NDA';
+                      const isSla = docTypeUpper === 'SLA';
+                      const canGenerateMissing = group.contracts.length === 1 && (isNda || isSla);
+                      const missingDocType = canGenerateMissing ? (isNda ? 'SLA' : 'NDA') : null;
 
                       const isApproving = actionLoading[contract.id] === 'approve';
                       const isRejecting = actionLoading[contract.id] === 'reject';
@@ -791,7 +843,7 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                           <div className="flex flex-wrap items-center justify-between gap-3 w-full">
                             {/* Left Metadata */}
                             <div className="flex items-center gap-2.5 flex-wrap">
-                              {getDocTypeBadge(docType)}
+                              {getDocTypeBadge(contract)}
                               {getStatusBadge(contract.status)}
                               <div className="flex items-center gap-1 text-xs text-gray-400 font-medium whitespace-nowrap pl-1">
                                 <Calendar size={13} className="text-gray-500 shrink-0" />
@@ -814,7 +866,7 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                                 <span className="text-xs text-gray-500 italic px-2">No Doc URL</span>
                               )}
 
-                              {/* Generate Missing Document Button */}
+                              {/* Generate Missing Document Button (Only for exact NDA/SLA waiting for pair) */}
                               {canGenerateMissing && (
                                 <button
                                   onClick={() => handleGenerateMissingDoc(contract, missingDocType, group.companyName)}
@@ -832,7 +884,7 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                                 <>
                                   {/* Edit Button */}
                                   <button
-                                    onClick={() => onOpenDocEditChat?.([contract])}
+                                    onClick={() => handleOpenEdit(contract)}
                                     disabled={isAnyActionLoading}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white border border-cyan-500/40 hover:border-cyan-500 transition-all duration-200 shadow-[0_0_10px_rgba(0,243,255,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
                                     title="Edit contract clauses in AI Document Editor"
@@ -857,6 +909,34 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
                                   </button>
 
                                   {/* Reject Button (Opens Rejection Modal) */}
+                                  <button
+                                    onClick={() => openRejectModal(contract)}
+                                    disabled={isAnyActionLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 transition-all duration-200 shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                    title="Reject contract with reason"
+                                  >
+                                    {isRejecting ? (
+                                      <Loader2 size={13} className="animate-spin" />
+                                    ) : (
+                                      <X size={13} strokeWidth={2.5} />
+                                    )}
+                                    <span>Reject</span>
+                                  </button>
+                                </>
+                              ) : isCustom && statusLower === 'changes_requested' ? (
+                                <>
+                                  {/* Custom Doc in changes_requested: Edit Button */}
+                                  <button
+                                    onClick={() => handleOpenEdit(contract)}
+                                    disabled={isAnyActionLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white border border-cyan-500/40 hover:border-cyan-500 transition-all duration-200 shadow-[0_0_10px_rgba(0,243,255,0.2)] disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                                    title="Edit contract clauses in AI Document Editor"
+                                  >
+                                    <FileEdit size={13} />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  {/* Reject Button */}
                                   <button
                                     onClick={() => openRejectModal(contract)}
                                     disabled={isAnyActionLoading}
@@ -1113,6 +1193,7 @@ export default function PipelineApprovals({ onShowToast, onOpenDocEditChat, refr
         </div>,
         document.body
       )}
+
     </div>
   );
 }

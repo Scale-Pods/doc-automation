@@ -10,8 +10,9 @@ import ReceiverCenter from './components/ReceiverCenter';
 import AnalyticsAudit from './components/AnalyticsAudit';
 import SigningComplete from './components/SigningComplete';
 import DocEditChat from './components/DocEditChat';
+import CustomDocuments from './components/CustomDocuments';
 
-const VALID_VIEWS = ['analytics', 'generation', 'pipeline', 'receiver'];
+const VALID_VIEWS = ['analytics', 'generation', 'custom-documents', 'pipeline', 'receiver'];
 
 const isSigningCompleteRoute = () => {
   if (typeof window === 'undefined') return false;
@@ -26,6 +27,7 @@ const getInitialView = () => {
     const rawHash = window.location.hash.replace('#', '').toLowerCase().trim();
     if (rawHash === 'analytics' || rawHash === 'audit') return 'analytics';
     if (rawHash === 'generation' || rawHash === 'create') return 'generation';
+    if (rawHash === 'custom-documents' || rawHash === 'custom' || rawHash === 'templates') return 'custom-documents';
     if (rawHash === 'pipeline' || rawHash === 'approvals' || rawHash === 'approval' || rawHash === 'review') return 'pipeline';
     if (rawHash === 'receiver' || rawHash === 'signed' || rawHash === 'execution') return 'receiver';
 
@@ -134,6 +136,21 @@ function App() {
             >
               <Hero />
               <IntakeForm onShowToast={showToast} />
+            </motion.div>
+          )}
+
+          {currentView === 'custom-documents' && (
+            <motion.div
+              key="custom-documents"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <CustomDocuments
+                onShowToast={showToast}
+                onNavigateToApprovals={() => handleViewChange('pipeline')}
+              />
             </motion.div>
           )}
 

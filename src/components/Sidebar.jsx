@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, GitPullRequest, BarChart3, ShieldCheck, FileCheck } from 'lucide-react';
+import { FileText, GitPullRequest, BarChart3, ShieldCheck, FileCheck, Files } from 'lucide-react';
 
 export default function Sidebar({ currentView, setCurrentView }) {
   const navItems = [
@@ -14,6 +14,12 @@ export default function Sidebar({ currentView, setCurrentView }) {
       label: 'Generation',
       icon: FileText,
       badge: 'Create'
+    },
+    {
+      id: 'custom-documents',
+      label: 'Custom Documents',
+      icon: Files,
+      badge: 'Custom'
     },
     {
       id: 'pipeline',
@@ -51,7 +57,7 @@ export default function Sidebar({ currentView, setCurrentView }) {
             <button
               key={item.id}
               onClick={() => setCurrentView(item.id)}
-              className={`group relative flex flex-col md:flex-row items-center justify-center md:justify-between px-2.5 md:px-3.5 py-2 md:py-3 min-h-[44px] rounded-xl transition-all duration-200 w-full text-center md:text-left ${
+              className={`group relative flex flex-col md:flex-row items-center justify-center md:justify-between px-1.5 sm:px-2.5 md:px-3.5 py-1.5 sm:py-2 md:py-3 min-h-[44px] rounded-xl transition-all duration-200 w-full text-center md:text-left ${
                 isActive
                   ? 'bg-glow/10 text-glow border border-glow/30 shadow-[0_0_20px_rgba(0,243,255,0.15)]'
                   : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -59,7 +65,7 @@ export default function Sidebar({ currentView, setCurrentView }) {
             >
               <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3">
                 <Icon size={19} className={`transition-transform duration-200 ${isActive ? 'scale-110 text-glow' : 'group-hover:text-gray-200'}`} />
-                <span className="font-medium text-xs md:text-sm">{item.label}</span>
+                <span className="font-medium text-[11px] sm:text-xs md:text-sm">{item.label}</span>
               </div>
               
               {/* Active Indicator on Desktop */}
