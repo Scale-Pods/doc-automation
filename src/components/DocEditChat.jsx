@@ -314,6 +314,12 @@ export default function DocEditChat({
   const [applyingProposalId, setApplyingProposalId] = useState(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  // Undo state
+  const [undoAvailable, setUndoAvailable] = useState(false);
+  const [undoTargetMsgId, setUndoTargetMsgId] = useState(null);
+  const [undoContractIds, setUndoContractIds] = useState([]);
+  const [isUndoing, setIsUndoing] = useState(false);
+
   // Document preview modal state
   const [previewModal, setPreviewModal] = useState({ isOpen: false, url: '', title: '' });
   const [previewFullScreen, setPreviewFullScreen] = useState(false);
@@ -695,6 +701,8 @@ export default function DocEditChat({
   // Switch / Change document link in header
   const handleChangeDocument = () => {
     setSelectedContracts([]);
+    setUndoAvailable(false);
+    setUndoTargetMsgId(null);
     handleOpenPicker();
   };
 
@@ -704,6 +712,10 @@ export default function DocEditChat({
     const trimmed = inputMessage.trim();
     const isAnyFileProcessing = attachedFiles.some((f) => f.isProcessing);
     if ((!trimmed && attachedFiles.length === 0) || loading || isAnyFileProcessing) return;
+
+    // Hide undo as soon as the user sends a new chat message
+    setUndoAvailable(false);
+    setUndoTargetMsgId(null);
 
     const attachmentNames = attachedFiles.map((f) => f.name);
     const processedAttachments = attachedFiles
@@ -790,7 +802,7 @@ export default function DocEditChat({
       const operations = data?.operations || [];
       const revision_ids = data?.revision_ids || [];
 
-      if (status === 'ready' && (preview.length > 0 || operations.length > 0)) {
+      if ((status === 'ready' || status === 'proposal') && (preview.length > 0 || operations.length > 0)) {
         const proposalId = 'prop-' + Date.now();
         setMessages(prev => [
           ...prev,
@@ -869,6 +881,8 @@ export default function DocEditChat({
 
       const status = data?.status;
       const reply = data?.reply || (status === 'applied' ? 'Changes applied successfully.' : 'Unable to apply changes.');
+      const verification = data?.verification;
+      const nextUndoAvailable = Boolean(data?.undo_available);
 
       if (status === 'applied') {
         // Fetch latest contracts to get fresh document preview URLs and updated data
@@ -899,6 +913,8 @@ export default function DocEditChat({
           url: c.drive_file_url || c.file_url || c.sla_url || c.nda_url || ''
         }));
 
+        const appliedMsgId = 'asst-applied-' + Date.now();
+
         // Mark proposal card as 'applied'
         setMessages(prev =>
           prev.map(m => {
@@ -912,21 +928,32 @@ export default function DocEditChat({
           })
         );
 
-        // Append assistant confirmation reply with document preview action chips
+        // Append assistant confirmation reply with document preview action chips & verification
         setMessages(prev => [
           ...prev,
           {
-            id: 'asst-applied-' + Date.now(),
+            id: appliedMsgId,
             role: 'assistant',
             content: reply,
-            appliedDocs: appliedDocList
+            appliedDocs: appliedDocList,
+            verification
           }
         ]);
+
+        if (nextUndoAvailable) {
+          setUndoAvailable(true);
+          setUndoTargetMsgId(appliedMsgId);
+          setUndoContractIds(payload.contract_ids || selectedContracts.map(c => c.id));
+        } else {
+          setUndoAvailable(false);
+          setUndoTargetMsgId(null);
+        }
 
         // Trigger onApplied callback
         onApplied?.(payload.contract_ids);
       } else {
         // status 'error' or 'clarify'
+        const notAppliedMsgId = 'asst-not-applied-' + Date.now();
         setMessages(prev =>
           prev.map(m => {
             if (m.id === proposalMsgId && m.proposal) {
@@ -942,11 +969,21 @@ export default function DocEditChat({
         setMessages(prev => [
           ...prev,
           {
-            id: 'asst-not-applied-' + Date.now(),
+            id: notAppliedMsgId,
             role: 'assistant',
-            content: reply
+            content: reply,
+            verification
           }
         ]);
+
+        if (nextUndoAvailable) {
+          setUndoAvailable(true);
+          setUndoTargetMsgId(notAppliedMsgId);
+          setUndoContractIds(payload.contract_ids || selectedContracts.map(c => c.id));
+        } else {
+          setUndoAvailable(false);
+          setUndoTargetMsgId(null);
+        }
       }
     } catch (error) {
       console.error('Error applying proposal:', error);
@@ -972,6 +1009,111 @@ export default function DocEditChat({
       ]);
     } finally {
       setApplyingProposalId(null);
+    }
+  };
+
+  // Handle Undo Last Edit
+  const handleUndoLastEdit = async () => {
+    if (isUndoing || !undoAvailable) return;
+
+    setIsUndoing(true);
+    const targetIds = undoContractIds.length > 0 ? undoContractIds : selectedContracts.map(c => c.id);
+
+    const payload = {
+      action: 'undo',
+      contract_ids: targetIds
+    };
+
+    console.log('Sending undo request:', payload);
+
+    try {
+      const response = await fetch(EDIT_CHAT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      }
+
+      let data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        data = data[0];
+      }
+
+      console.log('Undo response:', data);
+
+      const status = data?.status; // 'undone' | 'clarify'
+      const reply = data?.reply || (status === 'undone' ? 'Last edit undone.' : 'Undo request processed.');
+      const nextUndoAvailable = Boolean(data?.undo_available);
+      const verification = data?.verification;
+
+      // Refresh document preview exactly as is done after a successful apply
+      let freshDocs = selectedContracts;
+      try {
+        const client = getSupabaseClient();
+        if (client && targetIds.length > 0) {
+          const { data: freshContracts } = await client
+            .from('contracts')
+            .select('*')
+            .in('id', targetIds);
+          if (freshContracts && freshContracts.length > 0) {
+            freshDocs = freshContracts;
+            setSelectedContracts(freshContracts);
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Could not re-fetch fresh contracts after undo:', fetchErr);
+      }
+
+      setPreviewVersion(Date.now());
+
+      const appliedDocList = freshDocs.map(c => ({
+        id: c.id,
+        docType: c.doc_type || 'Contract',
+        companyName: c.company_name || c.client_name || '',
+        url: c.drive_file_url || c.file_url || c.sla_url || c.nda_url || ''
+      }));
+
+      const undoMsgId = 'asst-undo-' + Date.now();
+
+      // Show reply as an assistant message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: undoMsgId,
+          role: 'assistant',
+          content: reply,
+          appliedDocs: status === 'undone' ? appliedDocList : undefined,
+          verification
+        }
+      ]);
+
+      if (status === 'undone') {
+        onApplied?.(targetIds);
+      }
+
+      // Keep the button visible while undo_available is true (a second undo brings the edit back) and hide it when false.
+      if (nextUndoAvailable) {
+        setUndoAvailable(true);
+        setUndoTargetMsgId(undoMsgId);
+      } else {
+        setUndoAvailable(false);
+        setUndoTargetMsgId(null);
+      }
+    } catch (error) {
+      console.error('Error undoing last edit:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: 'asst-err-' + Date.now(),
+          role: 'assistant',
+          content: 'Failed to undo last edit, please try again.'
+        }
+      ]);
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -1163,6 +1305,50 @@ export default function DocEditChat({
                         </div>
                       )}
 
+                      {/* Verification Issues Warning Box if verification.ok is false */}
+                      {msg.verification && msg.verification.ok === false && (
+                        <div className="mt-3.5 p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs space-y-1.5 shadow-sm">
+                          <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                            <AlertCircle size={14} className="text-amber-400 shrink-0" />
+                            <span>Verification Warnings</span>
+                          </div>
+                          {Array.isArray(msg.verification.issues) && msg.verification.issues.length > 0 ? (
+                            <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-200/90 pl-1">
+                              {msg.verification.issues.map((issue, iIdx) => (
+                                <li key={iIdx}>{typeof issue === 'string' ? issue : JSON.stringify(issue)}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-[11px] text-amber-200/90">Verification reported one or more issues.</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Undo Last Edit Button if available on this reply */}
+                      {msg.id === undoTargetMsgId && undoAvailable && (
+                        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center">
+                          <button
+                            type="button"
+                            onClick={handleUndoLastEdit}
+                            disabled={isUndoing || loading}
+                            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/35 hover:border-amber-400 transition-all shadow-[0_0_12px_rgba(245,158,11,0.15)] disabled:opacity-50 cursor-pointer"
+                            title="Undo last edit"
+                          >
+                            {isUndoing ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin text-amber-400" />
+                                <span>Undoing last edit...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={13} className="text-amber-400" />
+                                <span>Undo last edit</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
                       {/* Quick Action Chip for greeting */}
                       {msg.showEditChip && (
                         <div className="mt-3 pt-3 border-t border-white/10">
@@ -1307,9 +1493,21 @@ export default function DocEditChat({
                               item.paragraph_index ||
                               item.section ||
                               pIdx + 1;
-                            const beforeText = item.before ?? '';
-                            const afterText = item.after ?? '';
+                            const beforeText = typeof item.before === 'string' ? item.before : (item.before != null ? String(item.before) : '');
+                            const afterText = typeof item.after === 'string' ? item.after : (item.after != null ? String(item.after) : '');
                             const isRemoved = !afterText || afterText.trim() === '';
+
+                            const KIND_LABELS = {
+                              edit: 'Edit',
+                              rewrite: 'Rewrite',
+                              insert: 'Insert',
+                              delete: 'Delete',
+                              format: 'Format',
+                              table_add_row: 'Add Table Row',
+                              table_delete_row: 'Delete Table Row'
+                            };
+                            const kindStr = typeof item.kind === 'string' ? item.kind.toLowerCase() : '';
+                            const kindLabel = (kindStr && KIND_LABELS[kindStr]) || (item.kind ? String(item.kind) : 'Clause Revision');
 
                             const { beforeTokens, afterTokens } = computeWordDiff(
                               beforeText,
@@ -1327,15 +1525,17 @@ export default function DocEditChat({
                                       {docType}
                                     </span>
                                     <span className="text-xs font-semibold text-gray-200">
-                                      Paragraph {paragraphNum}
+                                      {item.end_paragraph && item.end_paragraph !== paragraphNum
+                                        ? `Paragraphs ${paragraphNum} - ${item.end_paragraph}`
+                                        : `Paragraph ${paragraphNum}`}
                                     </span>
                                   </div>
-                                  <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full">
-                                    Clause Revision
+                                  <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full capitalize">
+                                    {kindLabel}
                                   </span>
                                 </div>
 
-                                {/* Option A: Side-by-side Neon Comparison Grid */}
+                                {/* Option A: Side-by-side Neon Comparison Grid (rendered for every kind) */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                   {/* Before Box (Deep Crimson Neon) */}
                                   <div className="space-y-1.5 flex flex-col">
@@ -1393,6 +1593,13 @@ export default function DocEditChat({
                                     </div>
                                   </div>
                                 </div>
+
+                                {/* Optional Note caption under item */}
+                                {typeof item.note === 'string' && item.note.trim() ? (
+                                  <p className="text-[11px] text-gray-400 italic px-1 pt-1 border-t border-white/5">
+                                    {item.note.trim()}
+                                  </p>
+                                ) : null}
                               </div>
                             );
                           })}
